@@ -1,0 +1,17 @@
+# PEPSI end-to-end driver (pepsi/e2e). Build context: a staged copy of pepsi/src and pepsi/e2e
+# (see build_pepsi.sh), so the large native build/ directory is never sent to the daemon.
+FROM ubuntu:24.04
+ENV DEBIAN_FRONTEND=noninteractive
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential cmake git ca-certificates curl libssl-dev iproute2 python3 time \
+    && rm -rf /var/lib/apt/lists/*
+WORKDIR /app/pepsi
+# Layer 1: build SEAL only (slow, rarely changes). A stub main lets CMake configure.
+COPY src ./src
+COPY e2e/CMakeLists.txt ./e2e/CMakeLists.txt
+RUN echo 'int main(){return 0;}' > e2e/pepsi_e2e.cpp \
+    && cmake -S e2e -B build-e2e -DCMAKE_BUILD_TYPE=Release \
+    && cmake --build build-e2e --target seal -j"$(nproc)"
+# Layer 2: the driver itself (fast to rebuild).
+COPY e2e ./e2e
+RUN cmake --build build-e2e --target pepsi_e2e -j"$(nproc)" && test -x build-e2e/pepsi_e2e

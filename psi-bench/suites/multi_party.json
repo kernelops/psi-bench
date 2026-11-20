@@ -1,0 +1,14 @@
+{
+  "name": "multi-party",
+  "description": "BZS-MPSI (authors' -perf benchmark mode, separate containers over TCP) against a naive star of parallel two-party VOLE-PSI runs at the leader (weaker privacy: the leader learns every pairwise intersection), for growing party count, set size and network. 2-party VOLE-PSI rows give the floor.",
+  "defaults": {"elem_bits": 128, "reps": 5, "warmup": 1, "timeout": 1500, "common": 100, "threads": 1, "network": "none"},
+  "experiments": [
+    {"protocol": "bzs-perf", "matrix": {"sizes": ["65536x3", "65536x4", "65536x5", "65536x6"]}},
+    {"protocol": "volepsi-star", "matrix": {"sizes": ["65536x3", "65536x4", "65536x5", "65536x6"]}},
+    {"protocol": "bzs-perf", "matrix": {"sizes": ["4096x3", "1048576x3"]}},
+    {"protocol": "volepsi-star", "matrix": {"sizes": ["4096x3", "1048576x3"]}},
+    {"protocol": "volepsi", "matrix": {"sizes": ["65536x2", "1048576x2"]}},
+    {"protocol": "bzs-perf", "matrix": {"sizes": ["65536x3", "65536x5"], "network": ["wan"]}},
+    {"protocol": "volepsi-star", "matrix": {"sizes": ["65536x3", "65536x5"], "network": ["wan"]}}
+  ]
+}

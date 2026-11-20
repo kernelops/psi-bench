@@ -1,0 +1,10 @@
+{
+  "name": "two-party-scaling",
+  "description": "Communication/time crossover: fixed client of 1024 32-bit elements, server size 2^16 to 2^22. VOLE-PSI traffic grows with the server set; PEPSI's request does not.",
+  "defaults": {"elem_bits": 32, "reps": 3, "warmup": 1, "timeout": 2400, "common": 100, "threads": 1, "network": "none"},
+  "experiments": [
+    {"protocol": "volepsi", "matrix": {"sizes": [[1024, 262144], [1024, 4194304]]}},
+    {"protocol": "pepsi-e2e", "variant": "hash-index", "threads": 6, "params": {"hash_index": 1},
+     "matrix": {"sizes": [[1024, 262144], [1024, 4194304]]}}
+  ]
+}

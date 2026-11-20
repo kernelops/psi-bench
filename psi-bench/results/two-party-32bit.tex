@@ -1,0 +1,24 @@
+\begin{tabular}{lrrrrr}
+\toprule
+Experiment & Runs & Wall (s) & CPU (s) & Mem (MB) & Comm (MB) \\
+\midrule
+volepsi 1024 vs 65536 none t1 32bit & 5/5 & 0.071 $\pm$ 0.003 & 0.07 & 10 & 0.95 \\
+volepsi 1024 vs 1048576 none t1 32bit & 5/5 & 0.413 $\pm$ 0.016 & 0.42 & 39 & 9.81 \\
+volepsi 4096 vs 1048576 none t1 32bit & 5/5 & 0.419 $\pm$ 0.013 & 0.43 & 39 & 9.89 \\
+volepsi 4096 vs 4096 none t1 32bit & 5/5 & 0.056 $\pm$ 0.006 & 0.05 & 10 & 0.47 \\
+volepsi 65536 vs 65536 none t1 32bit & 5/5 & 0.150 $\pm$ 0.006 & 0.16 & 31 & 2.36 \\
+pepsi-e2e[hash-index] 1024 vs 65536 none t6 32bit & 5/5 & 1.473 $\pm$ 0.172 & 5.39 & 210 & 6.39 \\
+pepsi-e2e[hash-index] 1024 vs 1048576 none t6 32bit & 5/5 & 9.481 $\pm$ 0.184 & 51.16 & 984 & 6.40 \\
+pepsi-e2e[hash-index] 4096 vs 1048576 none t6 32bit & 5/5 & 8.955 $\pm$ 0.533 & 49.22 & 985 & 6.40 \\
+pepsi-e2e[hash-index] 4096 vs 4096 none t6 32bit & 5/5 & 0.606 $\pm$ 0.112 & 1.35 & 127 & 6.39 \\
+pepsi-e2e[hash-index] 65536 vs 65536 none t6 32bit & 5/5 & 3.816 $\pm$ 0.106 & 13.32 & 417 & 47.39 \\
+pepsi-e2e[paper-literal] 1024 vs 1048576 none t6 32bit & 5/5 & 9.956 $\pm$ 0.259 & 55.28 & 904 & 5.82 \\
+pepsi-e2e[paper-literal] 4096 vs 1048576 none t6 32bit & 5/5 & 9.882 $\pm$ 0.633 & 55.36 & 902 & 5.82 \\
+pepsi-e2e[hash-index] 1024 vs 65536 none t1 32bit & 3/3 & 5.263 $\pm$ 0.190 & 5.26 & 136 & 6.40 \\
+pepsi-e2e[hash-index] 1024 vs 1048576 none t1 32bit & 3/3 & 52.492 $\pm$ 3.625 & 52.45 & 906 & 6.41 \\
+volepsi 1024 vs 1048576 wan t1 32bit & 5/5 & 2.596 $\pm$ 0.010 & 0.45 & 39 & 9.88 \\
+volepsi 65536 vs 65536 wan t1 32bit & 5/5 & 2.143 $\pm$ 0.004 & 0.18 & 31 & 2.41 \\
+pepsi-e2e[hash-index] 1024 vs 1048576 wan t6 32bit & 5/5 & 11.892 $\pm$ 0.848 & 57.82 & 985 & 6.46 \\
+pepsi-e2e[hash-index] 65536 vs 65536 wan t6 32bit & 5/5 & 7.117 $\pm$ 0.332 & 13.19 & 417 & 47.55 \\
+\bottomrule
+\end{tabular}

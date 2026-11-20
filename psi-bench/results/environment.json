@@ -1,0 +1,80 @@
+[
+  {
+    "hash": "b5c768b120cdf72a",
+    "recorded": "2026-11-20T20:07:58",
+    "cpu": {
+      "model": "Intel(R) Core(TM) Ultra 7 255H",
+      "logical_cpus": 16,
+      "threads_per_core": "1",
+      "l2_cache": "28 MiB (9 instances)",
+      "l3_cache": "24 MiB (1 instance)",
+      "topology": {
+        "p_cores": "0-5",
+        "e_cores": "6-13",
+        "lp_e_cores": "14-15"
+      },
+      "flags": [
+        "avx",
+        "avx2",
+        "avx_vnni",
+        "aes",
+        "pclmulqdq",
+        "bmi2",
+        "sha_ni"
+      ]
+    },
+    "memory_total_gb": 30.2,
+    "os": "Ubuntu 26.04.1 LTS",
+    "kernel": "7.0.0-43-generic",
+    "python": "3.14.4",
+    "docker": "29.1.3",
+    "host_gcc": "g++ (Ubuntu 15.2.0-16ubuntu1) 15.2.0",
+    "repos": {
+      "pepsi": {
+        "commit": "d9cf35e4ac4313bf892ca5cd1d90bd50a9d423d5",
+        "dirty": true,
+        "subject": "Fix the build: pin SEAL 4.7.1, add Windows support and README"
+      },
+      "volepsi": {
+        "commit": "1ecfe796c661085f21d37c7945bba11e9f54e04d",
+        "dirty": false,
+        "subject": "Retain compile options in README"
+      },
+      "bzs": {
+        "commit": "096d4ad573827406e45c4eb04a94228eec93335f",
+        "dirty": false,
+        "subject": "Update README.md"
+      }
+    },
+    "pepsi_build": {
+      "built": true,
+      "CMAKE_BUILD_TYPE": "Release",
+      "CMAKE_CXX_FLAGS": "",
+      "CMAKE_CXX_FLAGS_RELEASE": "-O3 -DNDEBUG",
+      "SEAL_USE_INTEL_HEXL": "OFF",
+      "CMAKE_CXX_COMPILER": "/usr/bin/c++",
+      "seal_version": "4.7.1"
+    },
+    "pinned_cpus_default": "0-5",
+    "images": {
+      "volepsi": {
+        "image_id": "54571e32fef5",
+        "os": "Ubuntu 24.04.5 LTS",
+        "gcc": "g++ (Ubuntu 13.3.0-6ubuntu2~24.04.1) 13.3.0",
+        "cmake": "cmake version 3.28.3"
+      },
+      "bzs": {
+        "image_id": "dbb8be06fcd2",
+        "os": "Ubuntu 22.04.5 LTS",
+        "gcc": "g++ (Ubuntu 11.4.0-1ubuntu1~22.04.3) 11.4.0",
+        "cmake": "cmake version 3.22.1"
+      },
+      "pepsi": {
+        "image_id": "88044c6da37b",
+        "os": "Ubuntu 24.04.5 LTS",
+        "gcc": "g++ (Ubuntu 13.3.0-6ubuntu2~24.04.1) 13.3.0",
+        "cmake": "cmake version 3.28.3"
+      }
+    }
+  }
+]

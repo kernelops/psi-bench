@@ -1,0 +1,16 @@
+# generated data: datasets, per-run output, the results database
+data/
+# local Python environment (cmake, ninja, fastapi, ...)
+.tools/
+# logs of benchmark and build runs
+logs/
+# frontend dependencies and build output (rebuild with `npm install && npm run build`)
+frontend/node_modules/
+frontend/dist/
+# Python caches
+__pycache__/
+*.pyc
+# editor / OS files
+.vscode/
+.idea/
+.DS_Store

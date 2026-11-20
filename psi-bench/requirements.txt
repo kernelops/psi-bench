@@ -1,0 +1,9 @@
+# Python dependencies of the psibench API server (the CLI itself uses only the standard library).
+# Versions are the ones the results were produced with.
+fastapi==0.165.0
+uvicorn[standard]==0.54.0
+python-multipart==0.0.34
+
+# Only needed to build the upstream PEPSI benchmark binaries natively (protocols "pepsi" and "pepsi-large").
+cmake==4.4.5
+ninja==1.13.2

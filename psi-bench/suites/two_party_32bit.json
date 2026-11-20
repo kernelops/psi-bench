@@ -1,0 +1,18 @@
+{
+  "name": "two-party-32bit",
+  "description": "VOLE-PSI vs PEPSI on identical 32-bit element files (the paper's PEPSI setting). Unbalanced (small client, large server) and balanced sets. PEPSI is run with the hash-function index (correct) and as literally described in the paper (false positives); 6 threads and 1 thread. VOLE-PSI file mode is single-threaded.",
+  "defaults": {"elem_bits": 32, "reps": 5, "warmup": 1, "timeout": 1500, "common": 100, "threads": 1, "network": "none"},
+  "experiments": [
+    {"protocol": "volepsi",
+     "matrix": {"sizes": [[1024, 65536], [1024, 1048576], [4096, 1048576], [4096, 4096], [65536, 65536]]}},
+    {"protocol": "pepsi-e2e", "variant": "hash-index", "threads": 6, "params": {"hash_index": 1},
+     "matrix": {"sizes": [[1024, 65536], [1024, 1048576], [4096, 1048576], [4096, 4096], [65536, 65536]]}},
+    {"protocol": "pepsi-e2e", "variant": "paper-literal", "threads": 6, "params": {"hash_index": 0},
+     "matrix": {"sizes": [[1024, 1048576], [4096, 1048576]]}},
+    {"protocol": "pepsi-e2e", "variant": "hash-index", "threads": 1, "reps": 3, "params": {"hash_index": 1},
+     "matrix": {"sizes": [[1024, 65536], [1024, 1048576]]}},
+    {"protocol": "volepsi", "matrix": {"sizes": [[1024, 1048576], [65536, 65536]], "network": ["wan"]}},
+    {"protocol": "pepsi-e2e", "variant": "hash-index", "threads": 6, "params": {"hash_index": 1},
+     "matrix": {"sizes": [[1024, 1048576], [65536, 65536]], "network": ["wan"]}}
+  ]
+}

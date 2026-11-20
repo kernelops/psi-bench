@@ -1,0 +1,11 @@
+# Build context: the BZS-MPSI repo root (local checkout, not a fresh git clone)
+FROM ubuntu:22.04
+ENV DEBIAN_FRONTEND=noninteractive
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential cmake git libtool autoconf automake pkg-config libssl-dev iproute2 python3 sudo ca-certificates time \
+    && rm -rf /var/lib/apt/lists/*
+WORKDIR /app/BZS-MPSI
+COPY . .
+# build.py ignores cmake exit codes, so verify the binary exists
+RUN python3 build.py -DVOLE_PSI_ENABLE_BOOST=ON && test -x out/build/linux/frontend/frontend
+WORKDIR /app/BZS-MPSI/out/build/linux/frontend

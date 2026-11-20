@@ -1,0 +1,13 @@
+{
+  "name": "two-party-128bit",
+  "description": "VOLE-PSI vs PEPSI on random 128-bit elements (PEPSI's large-element setting: elements hashed to lambda bits, lambda from Lemma 1 with alpha=40).",
+  "defaults": {"elem_bits": 128, "reps": 3, "warmup": 1, "timeout": 2400, "common": 100, "threads": 1, "network": "none"},
+  "experiments": [
+    {"protocol": "volepsi",
+     "matrix": {"sizes": [[1024, 65536], [1024, 1048576], [65536, 65536]]}},
+    {"protocol": "pepsi-e2e", "variant": "large", "threads": 6,
+     "matrix": {"sizes": [[1024, 65536], [1024, 1048576], [65536, 65536]]}},
+    {"protocol": "pepsi-e2e", "variant": "large", "threads": 1,
+     "matrix": {"sizes": [[1024, 65536]]}}
+  ]
+}

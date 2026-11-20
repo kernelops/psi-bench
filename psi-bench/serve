@@ -1,0 +1,7 @@
+#!/usr/bin/env bash
+# Start the psibench web UI and API:  ./serve [port]   then open http://127.0.0.1:8765
+# (8765 avoids port 8080, which the Airflow containers use.)
+HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PORT="${1:-8765}"
+cd "$HERE"
+PYTHONPATH="$HERE/backend${PYTHONPATH:+:$PYTHONPATH}" exec "$HERE/.tools/venv/bin/python" -m uvicorn psibench.api:app --host 127.0.0.1 --port "$PORT"
