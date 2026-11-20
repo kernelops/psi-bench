@@ -1,0 +1,35 @@
+Third-party code and scope of the license
+==========================================
+
+The MIT license in LICENSE covers the files written for this repository:
+
+  - psi-bench/      the benchmark harness, web UI, suites and results
+  - pepsi/e2e/      the end-to-end PEPSI driver
+  - README.md, NOTICE, LICENSE, .gitignore at the repository root
+
+The three folders below are third-party projects. They are included with their original commit history (the commits keep
+their original authors) so that the benchmark can be reproduced against the exact versions that were measured. Each keeps
+its own license and copyright. They are the work of their authors; please cite their papers.
+
+volepsi/      https://github.com/ladnir/volepsi
+              Implements "VOLE-PSI: Fast OPRF and Circuit-PSI from Vector-OLE" (Rindal and Schoppmann, EUROCRYPT 2021,
+              https://eprint.iacr.org/2021/266) and "Blazing Fast PSI from Improved OKVS and Subfield VOLE"
+              (https://eprint.iacr.org/2022/320). Measured commit: 1ecfe79.
+              License: MIT, Copyright 2022 Visa (see volepsi/LICENSE).
+
+BZS-MPSI/     https://github.com/orzcy/BZS-MPSI
+              "Efficient Scalable Multi-Party Private Set Intersection(-Variants) from Bicentric Zero-Sharing",
+              Gao et al., ACM CCS 2024, https://dl.acm.org/doi/10.1145/3658644.3690245. Measured commit: 096d4ad.
+              License: MIT, Copyright (c) 2024 orzcy (see BZS-MPSI/LICENSE).
+              It contains a modified copy of volePSI, with its own license in BZS-MPSI/volepsi_LICENSE.
+
+pepsi/        https://github.com/RasoulAM/pepsi
+              Mahdavi et al., "PEPSI: Practically Efficient Private Set Intersection in the Unbalanced Setting",
+              USENIX Security 2024, https://www.usenix.org/conference/usenixsecurity24/presentation/mahdavi
+              Original commit 6eab9dd (R. Akhavan Mahdavi, 2024-08-19).
+              The upstream repository does not contain a license file. The code is the property of its authors and is
+              included here, with attribution, only to make the benchmark reproducible. Commit d9cf35e on top of the
+              original adds a pinned SEAL version, Windows support and a README. If the authors object to this
+              inclusion, it will be removed.
+
+The papers themselves are not included.

@@ -1,0 +1,17 @@
+# papers (publisher copyright; cite them instead, see NOTICE)
+Papers/
+
+# build output and local environments
+/pepsi/build/
+/pepsi/build-e2e/
+/volepsi/out/
+/BZS-MPSI/out/
+node_modules/
+.tools/
+__pycache__/
+*.pyc
+
+# editor / OS files
+.vscode/
+.idea/
+.DS_Store
