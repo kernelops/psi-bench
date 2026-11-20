@@ -1,0 +1,81 @@
+#pragma once
+// © 2022 Visa.
+// Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the "Software"), to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the following conditions:
+// 
+// The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.
+// 
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+
+#include "volePSI/Defines.h"
+#include "volePSI/Paxos.h"
+#include "volePSI/RibbonOkvs.h"
+#include "libOTe/Vole/Silent/SilentVoleSender.h"
+#include "libOTe/Vole/Silent/SilentVoleReceiver.h"
+
+namespace volePSI
+{
+    inline constexpr oc::MultType DefaultVoleMultType = oc::MultType::ChosenBAA30;
+
+    class RsOprfSender : public oc::TimerAdapter
+    {
+    public:
+        RsOprfSender() { setMultType(DefaultVoleMultType); }
+
+        oc::SilentVoleSender<block,block, oc::CoeffCtxGF128> mVoleSender;
+        span<block> mB;
+        block mD;
+        Baxos mPaxos;
+        RibbonOkvs mRibbon;
+        u64 okvsSize() { return mOkvsType == OkvsType::Ribbon ? mRibbon.size() : mPaxos.size(); }
+        bool mMalicious = false;
+        block mW;
+        u64 mBinSize = 1 << 14;
+        u64 mSsp = 40;
+        bool mDebug = false;
+        // Both parties must select the same backend before starting a session.
+        // Ribbon is currently opt-in; Baxos retains its existing wire format.
+        OkvsType mOkvsType = OkvsType::Baxos;
+        void setOkvsType(OkvsType type) { mOkvsType = type; }
+
+        void setMultType(oc::MultType type) { mVoleSender.mLpnMultType = type; };
+
+        Proto send(u64 n, PRNG& prng, Socket& chl, u64 mNumThreads = 0, bool reducedRounds = false);
+
+
+        block eval(block v);
+
+
+        void eval(span<const block> val, span<block> output, u64 mNumThreads = 0);
+
+
+        Proto genVole(PRNG& prng, Socket& chl, bool reducedRounds);
+    };
+
+
+
+    class RsOprfReceiver : public oc::TimerAdapter
+    {
+
+    public:
+        RsOprfReceiver() { setMultType(DefaultVoleMultType); }
+
+        bool mMalicious = false;
+        oc::SilentVoleReceiver<block, block, oc::CoeffCtxGF128> mVoleRecver;
+        u64 mBinSize = 1 << 14;
+        u64 mSsp = 40;
+        bool mDebug = false;
+        // Both parties must select the same backend before starting a session.
+        // Ribbon is currently opt-in; Baxos retains its existing wire format.
+        OkvsType mOkvsType = OkvsType::Baxos;
+        void setOkvsType(OkvsType type) { mOkvsType = type; }
+
+        void setMultType(oc::MultType type) { mVoleRecver.mLpnMultType = type; };
+
+        Proto receive(span<const block> values, span<block> outputs, PRNG& prng, Socket& chl, u64 mNumThreads = 0, bool reducedRounds = false);
+
+
+        Proto genVole(u64 n, PRNG& prng, Socket& chl, bool reducedRounds);
+
+    };
+}

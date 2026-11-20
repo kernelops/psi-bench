@@ -1,0 +1,2430 @@
+#include "Paxos_Tests.h"
+#include "volePSI/Paxos.h"
+#include "cryptoTools/Crypto/PRNG.h"
+#include <thread>
+#include <cmath>
+#include <unordered_set>
+#include <random>
+#include "cryptoTools/Crypto/AES.h"
+#include "volePSI/SimpleIndex.h"
+#include <stdexcept>
+#include <vector>
+#include <limits>
+#include <algorithm>
+using namespace volePSI;
+
+auto& ZeroBlock = oc::ZeroBlock;
+auto& lout = oc::lout;
+using PRNG = oc::PRNG;
+using CLP = oc::CLP;
+using PointList = oc::PointList;
+using SparseMtx = oc::SparseMtx;
+
+
+void Paxos_buildRow_Test(const oc::CLP& cmd)
+{
+
+	u64 n = cmd.getOr("n", 1ull << cmd.getOr("nn", 10));
+	u64 t = cmd.getOr("t", 1ull << cmd.getOr("tt", 4));
+	auto s = cmd.getOr("s", 0);
+	PaxosHash<u16> h;
+	h.init(block(0, s), 3, n);
+	std::vector<block> hash(32);
+	oc::Matrix<u16> rows(32, 3);
+	//oc::Matrix<u16> rows(32, 3);
+	PRNG prng(block(1, s));
+
+	std::array<std::array<u16, 3>, 32> exp
+	{ {
+		{{858, 751, 414}},
+		{{677 , 590, 375 }},
+		{{857 , 240, 0   }},
+		{{18  , 373, 879 }},
+		{{990 , 62, 458  }},
+		{{894 , 667, 301 }},
+		{{1023, 438, 301 }},
+		{{532 , 815, 202 }},
+		{{64  , 507, 82  }},
+		{{664 , 739, 158 }},
+		{{4   , 523, 573 }},
+		{{719 , 282, 86  }},
+		{{156 , 396, 473 }},
+		{{810 , 916, 850 }},
+		{{959 , 1017, 449}},
+		{{3   , 841, 546 }},
+		{{703 , 146, 19  }},
+		{{935 , 983, 830 }},
+		{{689 , 804, 550 }},
+		{{237 , 661, 393 }},
+		{{25  , 817, 387 }},
+		{{112 , 531, 45  }},
+		{{799 , 747, 158 }},
+		{{986 , 444, 949 }},
+		{{916 , 954, 410 }},
+		{{736 , 219, 732 }},
+		{{111 , 628, 750 }},
+		{{272 , 627, 160 }},
+		{{191 , 610, 628 }},
+		{{1018, 213, 894 }},
+		{{1   , 609, 948 }},
+		{{570 , 60, 896  }},
+	} };
+
+	for (u64 tt = 0; tt < t; ++tt)
+	{
+		prng.get<block>(hash);
+		h.buildRow32(hash.data(), rows.data());
+
+		for (u64 i = 0; i < 32; ++i)
+		{
+			u16 rr[3];
+			h.buildRow(hash[i], rr);
+
+			for (u64 j = 0; j < 3; ++j)
+			{
+				if (rows(i, j) != rr[j])
+					throw RTE_LOC;
+
+				//if (tt == 0)
+				//{
+				//	std::cout << " " << rows(i, j);
+				//	if (j) std::cout << ",";
+				//}
+
+				if (tt == 0)
+				{
+
+					if (rows(i, j) != exp[i][j])
+					{
+						std::cout << i << ", " << j << " e "
+							<< exp[i][j] << " a " << rows(i, j) << std::endl;
+						throw RTE_LOC;
+					} 
+				}
+			}
+			//if (tt == 0)
+			//	std::cout << "\n";
+		}
+
+
+	}
+
+}
+
+
+void Paxos_solve_Test(const oc::CLP& cmd)
+{
+
+
+	u64 n = cmd.getOr("n", 1ull << cmd.getOr("nn", 15));
+	//double e = cmd.getOr("e", 2.4);
+	u64 w = cmd.getOr("w", 3);
+	u64 s = cmd.getOr("s", 0);
+	u64 t = cmd.getOr("t", 1);
+
+	for (auto dt : { PaxosParam::Binary , PaxosParam::GF128 })
+	{
+		for (u64 tt = 0; tt < t; ++tt)
+		{
+			Paxos<u16> paxos;
+			Paxos<u32> px2;
+			paxos.init(n, w, 40, dt, ZeroBlock);
+			px2.init(n, w, 40, dt, ZeroBlock);
+
+			std::vector<block> items(n), values(n), values2(n), p(paxos.size());
+			PRNG prng(block(tt, s));
+			prng.get(items.data(), items.size());
+			prng.get(values.data(), values.size());
+
+
+			paxos.setInput(items);
+			px2.setInput(items);
+
+			for (u64 i = 0; i < paxos.mRows.rows(); ++i)
+			{
+				for (u64 j = 0; j < w; ++j)
+				{
+					auto v0 = paxos.mRows(i, j);
+					auto v1 = px2.mRows(i, j);
+					if (v0 != v1)
+					{
+						throw RTE_LOC;
+					}
+				}
+			}
+
+			paxos.encode<block>(values, p);
+			paxos.decode<block>(items, values2, p);
+
+			if (values2 != values)
+			{
+				throw RTE_LOC;
+			}
+		}
+	}
+}
+
+
+void Paxos_solve_u8_Test(const oc::CLP& cmd)
+{
+
+
+	u64 n = cmd.getOr("n", 1ull << cmd.getOr("nn", 15));
+	//double e = cmd.getOr("e", 2.4);
+	u64 w = cmd.getOr("w", 3);
+	u64 s = cmd.getOr("s", 0);
+	u64 t = cmd.getOr("t", 1);
+
+	for (auto dt : { PaxosParam::Binary /*, PaxosParam::GF128*/ })
+	{
+		for (u64 tt = 0; tt < t; ++tt)
+		{
+			Paxos<u16> paxos;
+			Paxos<u32> px2;
+			paxos.init(n, w, 40, dt, ZeroBlock);
+			px2.init(n, w, 40, dt, ZeroBlock);
+
+			std::vector<block> items(n);
+			std::vector<u8> values(n), values2(n), p(paxos.size());
+			PRNG prng(block(tt, s));
+			prng.get(items.data(), items.size());
+			prng.get(values.data(), values.size());
+
+			paxos.setInput(items);
+			px2.setInput(items);
+
+			for (u64 i = 0; i < paxos.mRows.rows(); ++i)
+			{
+				for (u64 j = 0; j < w; ++j)
+				{
+					auto v0 = paxos.mRows(i, j);
+					auto v1 = px2.mRows(i, j);
+					if (v0 != v1)
+					{
+						throw RTE_LOC;
+					}
+				}
+			}
+
+			paxos.encode<u8>(values, p);
+			paxos.decode<u8>(items, values2, p);
+
+			if (values2 != values)
+			{
+				throw RTE_LOC;
+			}
+		}
+	}
+}
+
+void Paxos_solve_mtx_Test(const oc::CLP& cmd)
+{
+
+
+	u64 n = cmd.getOr("n", 1ull << cmd.getOr("nn", 15));
+	u64 c = 4;
+	//double e = cmd.getOr("e", 2.4);
+	u64 w = cmd.getOr("w", 3);
+	u64 s = cmd.getOr("s", 0);
+	u64 t = cmd.getOr("t", 1);
+
+	for (auto dt : { PaxosParam::Binary /*, PaxosParam::GF128*/ })
+	{
+		for (u64 tt = 0; tt < t; ++tt)
+		{
+			Paxos<u16> paxos;
+			Paxos<u32> px2;
+			paxos.init(n, w, 40, dt, ZeroBlock);
+			px2.init(n, w, 40, dt, ZeroBlock);
+
+			std::vector<block> items(n);
+			Matrix<u8> values(n, c), values2(n, c), p(paxos.size(), c);
+			PRNG prng(block(tt, s));
+			prng.get(items.data(), items.size());
+			prng.get(values.data(), values.size());
+
+			paxos.setInput(items);
+			px2.setInput(items);
+
+			for (u64 i = 0; i < paxos.mRows.rows(); ++i)
+			{
+				for (u64 j = 0; j < w; ++j)
+				{
+					auto v0 = paxos.mRows(i, j);
+					auto v1 = px2.mRows(i, j);
+					if (v0 != v1)
+					{
+						throw RTE_LOC;
+					}
+				}
+			}
+
+			paxos.encode<u8>(values, p);
+			paxos.decode<u8>(items, values2, p);
+
+			if (!(values2 == values))
+			{
+				throw RTE_LOC;
+			}
+		}
+	}
+}
+
+
+
+void insertDuplicates(
+	Paxos<u64>& paxos,
+	Matrix<u64>& rows,
+	span<block> dense,
+	u64 g,
+	PRNG& prng,
+	PaxosParam::DenseType dt)
+{
+
+	auto w = rows.cols();
+	auto n = rows.rows();
+	PaxosParam param;
+	param.mSparseSize = n * 1.4;
+	param.mDenseSize = dt == PaxosParam::DenseType::Binary ? g + 40 : g;
+	param.mG = g;
+	param.mDt = dt;
+	param.mSsp = 40;
+	param.mWeight = w;
+	paxos.init(n, param, ZeroBlock);
+
+
+	std::unordered_set<block> rowSets;
+	prng.get<block>(dense);
+
+	for (u64 i = 0; i < n - g; ++i)
+	{
+		while (true)
+		{
+			paxos.mHasher.buildRow(dense[i], rows[i].data());
+
+			oc::RandomOracle hash(sizeof(block));
+			hash.Update(rows[i].data(), w);
+			block hh;
+			hash.Final(hh);
+			if (rowSets.insert(hh).second)
+				break;
+		}
+	}
+
+	std::set<u64> gapRows;
+	u64 j = n - g;
+	while (gapRows.size() != g)
+	{
+		auto  i = prng.get<u64>() % (n - g);
+
+		if (gapRows.insert(i).second)
+		{
+			std::memcpy(rows[j].data(), rows[i].data(), rows[i].size_bytes());
+			//dense[j] = prng.get();
+			++j;
+		}
+	}
+
+
+	paxos.setInput(rows, dense);
+
+}
+
+
+
+
+void insertCycle(
+	Paxos<u64>& paxos,
+	Matrix<u64>& rows,
+	span<block> dense,
+	u64 g,
+	PRNG& prng,
+	PaxosParam::DenseType dt)
+{
+	auto w = rows.cols();
+	auto n = rows.rows();
+	PaxosParam param;
+	param.mSparseSize = n + w - g;
+	param.mDenseSize = dt == PaxosParam::DenseType::Binary ? g + 40 : g;
+	param.mWeight = w;
+	param.mG = g;
+	param.mSsp = 40;
+	param.mDt = dt;
+
+	for (u64 i = 0; i < n - g; ++i)
+	{
+		for (u64 j = 0; j < w; ++j)
+			rows(i, j) = i + j;
+	}
+	for (u64 i = n - g; i < n; ++i)
+	{
+		std::set<u64> ss;
+		while (ss.size() < w)
+			ss.insert(prng.get<u64>() % param.mSparseSize);
+		u64 j = 0;
+		for (auto s : ss)
+			rows(i, j++) = s;
+	}
+
+	prng.get<block>(dense);
+	paxos.init(n, param, ZeroBlock);
+	paxos.setInput(rows, dense);
+}
+
+void Paxos_solve_gap_Test(const oc::CLP& cmd)
+{
+
+
+	u64 n = cmd.getOr("n", 1ull << cmd.getOr("nn", 10));
+	//double e = cmd.getOr("e", 2.4);
+	u64 w = cmd.getOr("w", 3);
+	u64 s = cmd.getOr("s", 0);
+	//u64 v = cmd.getOr("v", cmd.isSet("v") ? 1 : 0);
+	u64 t = cmd.getOr("t", 1);
+	u64 g = cmd.getOr("g", 3);
+
+	for (auto dup : { false, true })
+	{
+
+		for (auto dt : { PaxosParam::Binary , PaxosParam::GF128 })
+		{
+			for (u64 tt = 0; tt < t; ++tt)
+			{
+				Paxos<u64> paxos;
+				Matrix<u64> rows(n, w);
+				PRNG prng(block(tt, s));
+
+				std::vector<block> dense(n);
+
+				if (dup)
+					insertDuplicates(paxos, rows, dense, g, prng, dt);
+				else
+					insertCycle(paxos, rows, dense, g, prng, dt);
+
+				std::vector<block> values(n), p(paxos.size());
+				prng.get<block>(values);
+				paxos.encode<block>(values, p);
+
+
+				PxVector<block> PP(p);
+				auto h = PP.defaultHelper();
+				for (u64 i = 0; i < n; ++i)
+				{
+					block values2;
+					paxos.decode1<block>(rows[i].data(), &dense[i], &values2, PP, h);
+					if (values2 != values[i])
+					{
+						throw RTE_LOC;
+					}
+
+				}
+			}
+		}
+	}
+}
+
+void Paxos_solve_rand_Test(const oc::CLP& cmd)
+{
+	u64 n = cmd.getOr("n", 1ull << cmd.getOr("nn", 10));
+	u64 s = cmd.getOr("s", 0);
+	u64 t = cmd.getOr("t", 1);
+
+	for (auto dt : { PaxosParam::Binary , PaxosParam::GF128 })
+	{
+		for (u64 tt = 0; tt < t; ++tt)
+		{
+			Paxos<u64> paxos;
+			//n = 4000;
+			paxos.init(n, PaxosParam(n, 3, 40, dt), ZeroBlock);
+			std::vector<block> items(n), values(n), values2(n), p(paxos.size(), ZeroBlock);
+			PRNG prng(block(tt, s));
+			prng.get(items.data(), items.size());
+			prng.get(values.data(), values.size());
+
+			//for (u64 i = 0; i < p.size(); ++i)
+			//	p[i] = block(342 * i, i);
+
+			paxos.solve<block>(items, values, p, &prng);
+
+			for (u64 i = 0; i < p.size(); ++i)
+			{
+				auto pp = p[i];
+				if (pp == oc::ZeroBlock)
+					throw RTE_LOC;
+			}
+
+			paxos.decode<block>(items, values2, p);
+
+			if (values2 != values)
+			{
+				u64 count = 0;
+				for (u64 i = 0; i < n; ++i)
+				{
+					if (values[i] != values2[i])
+					{
+						if (count < 10)
+							std::cout << i << " " << values[i] << " " << values2[i] << std::endl;
+						else
+						{
+
+							std::cout << "..." << std::endl;
+							break;
+						}
+
+						++count;
+					}
+				}
+				throw RTE_LOC;
+			}
+		}
+	}
+}
+
+void Paxos_solve_rand_gap_Test(const oc::CLP& cmd)
+{
+	u64 n = 1ull << 10;
+	double e = 1.4;
+	u64 w = 3;
+	u64 s = 0;
+	u64 g = 1;
+
+	for (auto dt : { PaxosParam::Binary , PaxosParam::GF128 })
+	{
+		Paxos<u64> paxos;
+
+		PaxosParam param;
+		param.mSparseSize = n * e;
+		param.mDenseSize = 40 + g;
+		param.mDt = dt;
+		param.mG = g;
+		param.mSsp = 40;
+		param.mWeight = w;
+		paxos.init(n, param, ZeroBlock);
+		std::vector<block> values(n), p(paxos.size()), dense(n);
+
+
+		Matrix<u64> rows(n, w);
+		PRNG prng(block(0, s));
+
+		std::unordered_set<block> rowSets;
+		prng.get<block>(dense);
+		for (u64 i = 0; i < n - g; ++i)
+		{
+			while (true)
+			{
+				paxos.mHasher.buildRow(dense[i], rows[i].data());
+
+				oc::RandomOracle hash(sizeof(block));
+				hash.Update(rows[i].data(), w);
+				block hh;
+				hash.Final(hh);
+				if (rowSets.insert(hh).second)
+					break;
+			}
+		}
+
+		std::set<u64> gapRows;
+		u64 j = n - g;
+		while (gapRows.size() != g)
+		{
+			auto  i = prng.get<u64>() % (n - g);
+			if (gapRows.insert(i).second)
+			{
+				std::memcpy(rows[j].data(), rows[i].data(), rows[i].size_bytes());
+				++j;
+			}
+		}
+
+		prng.get(values.data(), values.size());
+
+		paxos.setInput(rows, dense);
+
+		for (u64 i = 0; i < p.size(); ++i)
+			p[i] = oc::ZeroBlock;
+
+		paxos.mDebug = true;
+		paxos.encode<block>(values, p, &prng);
+
+		for (u64 i = 0; i < p.size(); ++i)
+		{
+			auto pp = p[i];
+			if (pp == oc::ZeroBlock)
+				throw RTE_LOC;
+		}
+
+
+
+		PxVector<block> PP(p);
+		auto h = PP.defaultHelper();
+		for (u64 i = 0; i < n; ++i)
+		{
+			block values2;
+			paxos.decode1<block>(rows[i].data(), &dense[i], &values2, PP, h);
+			if (values2 != values[i])
+			{
+				std::cout << (values2 ^ values[i]) << std::endl;
+				throw RTE_LOC;
+			}
+
+		}
+	}
+}
+
+namespace volePSI
+{
+
+	block hexToBlock(const std::string& buff);
+}
+
+
+void Baxos_solve_Test(const oc::CLP& cmd)
+{
+
+	u64 n = cmd.getOr("n", 1ull << cmd.getOr("nn", 10));
+	u64 b = cmd.getOr("b", n/4);
+	u64 w = cmd.getOr("w", 3);
+	u64 s = cmd.getOr("s", 0);
+	//u64 v = cmd.getOr("v", cmd.isSet("v") ? 1 : 0);
+	u64 t = cmd.getOr("t", 1);
+	bool v = cmd.isSet("v");
+	//u64 g = cmd.getOr("g", 3);
+
+	//for (u64 n = 10; n < nn; ++n)
+	{
+		PRNG prng(block(0, s));
+		Baxos paxos;
+		paxos.init(n, b, w, 40, PaxosParam::GF128, prng.get<block>());
+
+		std::vector<block> items(n), values(n), values2(n), p(paxos.size());
+		prng.get(items.data(), items.size());
+		prng.get(values.data(), values.size());
+
+		for (u64 tt = 0; tt < t; ++tt)
+		{
+			PRNG prng(block(tt, s));
+			paxos.init(n, b, w, 40, PaxosParam::GF128, prng.get<block>());
+
+			paxos.solve<block>(items, values, p);
+			paxos.decode<block>(items, values2, p);
+
+			if (v)
+				std::cout << "." << std::flush;
+			if (values2 != values)
+			{
+				u64 count = 0;
+				for (u64 i = 0; i < n; ++i)
+				{
+					if (values[i] != values2[i])
+					{
+						if (count < 10)
+							std::cout << i << " " << values[i] << " " << values2[i] << std::endl;
+						else
+						{
+
+							std::cout << "..." << std::endl;
+							break;
+						}
+
+						++count;
+					}
+				}
+
+				std::cout << "seed " << prng.getSeed() << " "<<tt << std::endl;
+				throw RTE_LOC;
+			}
+		}
+	}
+
+}
+
+
+void Baxos_solve_mtx_Test(const oc::CLP& cmd)
+{
+
+	u64 n = cmd.getOr("n", 1ull << cmd.getOr("nn", 10));
+	u64 b = cmd.getOr("b", n / 4);
+	u64 w = cmd.getOr("w", 3);
+	u64 s = cmd.getOr("s", 0);
+	//u64 v = cmd.getOr("v", cmd.isSet("v") ? 1 : 0);
+	u64 t = cmd.getOr("t", 1);
+	u64 c = cmd.getOr("c", 3);
+
+	//for (u64 n = 10; n < nn; ++n)
+	{
+
+
+		for (u64 tt = 0; tt < t; ++tt)
+		{
+			Baxos paxos;
+			paxos.init(n, b, w, 40, PaxosParam::Binary, ZeroBlock);
+			std::vector<block> items(n);
+			Matrix<u8> values(n, c), values2(n, c), p(paxos.size(), c);
+			PRNG prng(block(tt, s));
+			prng.get(items.data(), items.size());
+			prng.get(values.data(), values.size());
+
+			paxos.solve<u8>(items, values, p);
+
+
+			paxos.decode<u8>(items, values2, p);
+
+			if (!(values2 == values))
+			{
+				u64 count = 0;
+				for (u64 i = 0; i < n; ++i)
+				{
+					if (std::memcmp(values[i].data(), values2[i].data(), c))
+					{
+						if (count < 10)
+							std::cout << i << " " << values[i][0] << " " << values2[i][0] << std::endl;
+						else
+						{
+
+							std::cout << "..." << std::endl;
+							break;
+						}
+
+						++count;
+					}
+				}
+				throw RTE_LOC;
+			}
+		}
+	}
+
+}
+
+void Baxos_solve_par_Test(const oc::CLP& cmd)
+{
+	u64 n = cmd.getOr("n", 1ull << cmd.getOr("nn", 16));
+	u64 b = cmd.getOr("b", n / 16);
+	u64 w = cmd.getOr("w", 3);
+	u64 s = cmd.getOr("s", 0);
+	u64 t = cmd.getOr("t", 1);
+	u64 nt = cmd.getOr("nt", 8);
+
+	//for (u64 n = 10; n < nn; ++n)
+	{
+
+
+		for (u64 tt = 0; tt < t; ++tt)
+		{
+			Baxos paxos;
+			paxos.init(n, b, w, 40, PaxosParam::Binary, ZeroBlock);
+			std::vector<block> items(n), values(n), values2(n), p(paxos.size());
+			PRNG prng(block(tt, s));
+			prng.get(items.data(), items.size());
+			prng.get(values.data(), values.size());
+
+			paxos.solve<block>(items, values, p, nullptr, 1);
+
+			paxos.solve<block>(items, values, p, nullptr, nt);
+
+
+			paxos.decode<block>(items, values2, p, nt);
+
+			if (values2 != values)
+			{
+				u64 count = 0;
+				for (u64 i = 0; i < n; ++i)
+				{
+					if (values[i] != values2[i])
+					{
+						if (count < 10)
+							std::cout << i << " " << values[i] << " " << values2[i] << std::endl;
+						else
+						{
+
+							std::cout << "..." << std::endl;
+							break;
+						}
+
+						++count;
+					}
+				}
+				throw RTE_LOC;
+			}
+		}
+	}
+}
+
+void Baxos_solve_rand_Test(const oc::CLP& cmd)
+{
+	u64 n = cmd.getOr("n", 1ull << cmd.getOr("nn", 16));
+	//u64 b = cmd.getOr("b", n / 4);
+	//double e = cmd.getOr("e", 2.4);
+	//u64 w = cmd.getOr("w", 3);
+	u64 s = cmd.getOr("s", 0);
+	//u64 v = cmd.getOr("v", cmd.isSet("v") ? 1 : 0);
+	u64 t = cmd.getOr("t", 1);
+	//u64 g = cmd.getOr("g", 3);
+
+	//for (u64 n = 10; n < nn; ++n)
+	{
+
+		for (u64 tt = 0; tt < t; ++tt)
+		{
+			Baxos paxos;
+			//n = 4000;
+			paxos.init(n, 1 << 10, 3, 40, PaxosParam::Binary, ZeroBlock);
+			std::vector<block> items(n), values(n), values2(n), p(paxos.size(), ZeroBlock);
+			PRNG prng(block(tt, s));
+			prng.get(items.data(), items.size());
+			prng.get(values.data(), values.size());
+
+			for (u64 i = 0; i < p.size(); ++i)
+				p[i] = block(342 * i, i);
+
+			paxos.solve<block>(items, values, p, &prng);
+
+			for (u64 i = 0; i < p.size(); ++i)
+			{
+				auto pp = p[i];
+				if (pp == block(342 * i, i))
+					throw RTE_LOC;
+			}
+
+
+			paxos.decode<block>(items, values2, p);
+
+			if (values2 != values)
+			{
+				u64 count = 0;
+				for (u64 i = 0; i < n; ++i)
+				{
+					if (values[i] != values2[i])
+					{
+						if (count < 10)
+							std::cout << i << " " << values[i] << " " << values2[i] << std::endl;
+						else
+						{
+
+							std::cout << "..." << std::endl;
+							break;
+						}
+
+						++count;
+					}
+				}
+				throw RTE_LOC;
+			}
+		}
+	}
+}
+
+void Paxos_experiment(const CLP& cmd)
+{
+	// the number of items inserted
+	u64 n = cmd.getOr("n", 1ull << cmd.getOr("nn", 10));
+
+	// the expansion ratio.
+	double e = cmd.getOr("e", 2.4);
+
+	// the step size if more than one expansion should be used.
+	double eStep = cmd.getOr("es", 0.01);
+	double eEnd = cmd.getOr("ee", e);
+
+	// the weight
+	u64 w = cmd.getOr("w", 3);
+
+	// the seed
+	u64 s = cmd.getOr("s", 0);
+
+	// verbose
+	u64 v = cmd.getOr("v", cmd.isSet("v") ? 1 : 0);
+
+	// number of trials
+	u64 t = cmd.getOr("t", 1);
+
+	// the trial that we should start on
+	u64 ts = cmd.getOr("ts", 0);
+
+	// numnber of threads
+	u64 nt = cmd.getOr("nt", std::thread::hardware_concurrency());
+
+
+	u64 maxPrint = cmd.getOr("mp", 5);
+
+	auto window = cmd.getOr("window", 0.0);
+	auto expo = cmd.getOr("expo", 0.0);
+	auto lap = cmd.isSet("lap");
+	auto uniform = cmd.isSet("uniform");
+	auto ignoreDup = cmd.isSet("ignoreDup");
+
+	bool noPrint = cmd.isSet("noPrint");
+	while (e <= eEnd)
+	{
+		u64 total = 0;
+		std::vector<u64> counts;
+		std::vector<u64> badSeeds;
+		std::mutex mtx;
+		bool done = false;
+		auto routine = [&](u64 thrdIdx)
+		{
+			Paxos<u32> paxos;
+
+			PaxosParam param;
+			param.mSparseSize = n * e;
+			param.mDenseSize = 40;
+			param.mDt = PaxosParam::Binary;
+			param.mSsp = 40;
+			param.mWeight = w;
+			paxos.init(n, param, ZeroBlock);
+			if (v > 1)
+				paxos.mVerbose = true;
+
+
+			std::vector<block> items(n), p(paxos.mSparseSize);
+
+
+			for (u64 i = thrdIdx + ts; i < t; i += nt)
+			{
+				PRNG prng(block(i, s));
+
+
+				if (window)
+				{
+					throw RTE_LOC;
+					if (window > 1 || window < 0)
+					{
+						std::cout << " window must be in [0,1]" << std::endl;
+						throw RTE_LOC;
+					}
+					auto mod = u64(paxos.mSparseSize * window);
+					oc::Matrix<u32> rows(n, w);
+					for (u64 i = 0; i < n; ++i)
+					{
+						u32 p = prng.get<u32>() % paxos.mSparseSize;
+						std::set<u32> ss;
+						while (ss.size() != w)
+						{
+							ss.insert((p + (prng.get<u32>() % mod)) % paxos.mSparseSize);
+						}
+
+						std::copy(ss.begin(), ss.end(), rows[i].begin());
+					}
+					std::vector<block> dense(n);
+					prng.get<block>(dense);
+					paxos.setInput(rows, dense);
+				}
+				else if (expo)
+				{
+					throw RTE_LOC;
+					std::exponential_distribution<double> x(expo);
+					oc::Matrix<u32> rows(n, w);
+					for (u64 i = 0; i < n; ++i)
+					{
+						u32 p = prng.get<u32>() % paxos.mSparseSize;
+						std::set<u32> ss;
+						while (ss.size() != w)
+						{
+							auto v = u32(x(prng) * paxos.mSparseSize);
+
+							// negate
+							if (lap && prng.getBit())
+								v = paxos.mSparseSize - v;
+							//std::cout << v << std::endl;
+							ss.insert((p + v) % paxos.mSparseSize);
+						}
+
+						std::copy(ss.begin(), ss.end(), rows[i].begin());
+					}
+					std::vector<block> dense(n);
+					prng.get<block>(dense);
+					paxos.setInput(rows, dense);
+				}
+				else if (uniform)
+				{
+					//PRNG prng(block(i, s));
+					//std::cout << "s " << prng.getSeed() << std::endl;
+					oc::Matrix<u32> rows(n, w);
+					for (u64 i = 0; i < n; ++i)
+					{
+						std::set<u32> ss;
+						while (ss.size() != w)
+						{
+							ss.insert(prng.get<u32>() % paxos.mSparseSize);
+						}
+
+						std::copy(ss.begin(), ss.end(), rows[i].begin());
+					}
+					std::vector<block> dense(n);
+					prng.get<block>(dense);
+					paxos.setInput(rows, dense);
+				}
+				else
+				{
+					prng.get(items.data(), items.size());
+					paxos.setInput(items);
+				}
+				//auto src = paxos;
+				//for (u64 j = 0; j < 3; ++j)
+				{
+					std::vector<u32> mr, mc;
+					std::vector<std::array<u32, 2>> gap;
+					paxos.triangulate(mr, mc, gap);
+
+					if (ignoreDup)
+					{
+						std::vector<std::array<u32, 2>> gap2;
+						for (u64 i = 0; i < gap.size(); ++i)
+						{
+							auto r0 = paxos.mRows[gap[i][0]].data();
+							auto r1 = paxos.mRows[gap[i][1]].data();
+							auto cmp = memcmp(r0, r1, paxos.mRows.cols() * sizeof(u64));
+							if (cmp)
+								gap2.push_back(gap[i]);
+						}
+						gap = std::move(gap2);
+					}
+					auto g = gap.size();
+
+					//auto a = paxos.apply(perm);
+
+					//if (paxos != a.unapply())
+					//    throw RTE_LOC;
+
+					//lout << paxos << std::endl
+					//    << a << std::endl;
+					//auto g = a.gap();
+					//std::cout << "g " << g << std::endl;;
+
+					//paxos = paxos.shuffle(prng);
+					if (v)
+					{
+						auto tri = paxos.getTriangulization();
+						std::cout << g << "\n" << tri.mH << std::endl;
+					}
+					//else
+					//{
+					//    //std::cout << g << " ";
+					//}
+
+
+					std::lock_guard<std::mutex> lock(mtx);
+					if (counts.size() <= g)
+						counts.resize(g + 1);
+
+					++counts[g];
+					++total;
+
+					if (g)
+						badSeeds.push_back(i);
+
+					//if (g)
+					//{
+
+					//    auto pp = paxos.shuffle(prng);
+					//    auto perm2 = pp.triangulate();
+					//    pp = pp.apply(perm2);
+					//    //std::cout << pp << std::endl;
+					//    auto g1 = pp.gap();
+
+					//    auto perm3 = paxos.core(false);
+					//    auto g2 = paxos.apply(perm3).gap();
+					//    if (g != g2 || g1 != g)
+					//    {
+
+					//        std::cout << "bad gap " << g << " " << g1 << " " << g2 << std::endl;
+					//        paxos.core(true);
+
+					//        std::cout << g << " " << g2 << "\n" << paxos.apply(perm) << std::endl;
+
+					//        abort();
+					//    }
+					//    //
+					//    //abort();
+					//}
+				}
+				//std::cout <<"\n-----------------------------\n "<< std::endl;
+
+			}
+
+			done = true;
+		};
+
+		auto print = [&]()
+		{
+			if (noPrint)
+				return;
+			double p = 0;
+			double nn, avg = 0;
+			std::vector<double> ssp;
+			u64 min = ~0ull, max = 0, maxCount = 0;
+			std::vector<u64>bs;
+			{
+				std::lock_guard<std::mutex> lock(mtx);
+				if (total)
+				{
+					max = counts.size() - 1;
+					u64 goodCount = 0;
+					maxCount = counts.back();
+
+					p = double(total) * 100 / t;
+					nn = std::log2(std::max<u64>(1, total));
+					for (u64 i = 0; i < counts.size(); ++i)
+					{
+						goodCount += counts[i];
+						auto badCount = total - goodCount;
+						ssp.push_back(nn - std::log2(std::max<u64>(1, badCount)));
+
+						if (counts[i])
+							min = std::min<u64>(min, i);
+
+						avg += counts[i] * i;
+					}
+
+					bs = badSeeds;
+					avg = avg / total;
+				}
+			}
+			if (p)
+			{
+				std::stringstream ss;
+				ss << "\r"
+					<< min << " "
+					<< avg << " "
+					<< max << " (" << maxCount << ") ~ ";
+
+				for (u64 i = 0; i < std::min<u64>(ssp.size(), maxPrint); ++i)
+					ss << ssp[i] << " ";
+
+				ss << " ~ " << nn << " " << p << "  ~ ";
+
+				u64 maxBS = 4;
+				for (u64 i = 0; i < std::min<u64>(4, bs.size()); ++i)
+					ss << bs[i] << " ";
+
+				if (bs.size() > maxBS)
+					ss << "... (" << bs.size() << ")";
+				ss << "       ";
+				lout << ss.str() << std::flush;
+			}
+		};
+
+
+		std::vector<std::thread> thrds(nt);
+		for (u64 i = 0; i < thrds.size(); ++i)
+			thrds[i] = std::thread(routine, i);
+
+		std::cout << "min avg max (maxCount) ~ gap0-ssp gap1-ssp ... ~ log2(trials) percentDone ~ badSeeds " << std::endl;
+		while (!done)
+		{
+			print();
+			std::this_thread::sleep_for(std::chrono::seconds(1));
+		}
+
+		for (u64 i = 0; i < thrds.size(); ++i)
+			thrds[i].join();
+
+		print();
+		std::cout << std::endl;
+
+		e += eStep;
+	}
+}
+
+void Paxos_invE_Test(const oc::CLP& cmd)
+{
+
+	u64 n = cmd.getOr("n", 1ull << cmd.getOr("nn", 5));
+	//double e = cmd.getOr("e", 1.4);
+	//double eStep = cmd.getOr("es", 0.01);
+	//double eEnd = cmd.getOr("ee", e);
+	u64 w = cmd.getOr("w", 3);
+	u64 s = cmd.getOr("s", 0);
+	u64 v = cmd.getOr("v", cmd.isSet("v") ? 1 : 0);
+	u64 g = cmd.getOr("g", 4);
+	u64 t = cmd.getOr("t", 1);
+	//u64 ts = cmd.getOr("ts", 0);
+	//u64 nt = cmd.getOr("nt", std::thread::hardware_concurrency());
+
+	{
+		u64 nn = 10;
+		Matrix<block> mtx(nn, nn);
+		PRNG prng(ZeroBlock);
+		prng.get<block>(mtx);
+
+		auto inv = gf128Inv(mtx);
+
+		auto I = gf128Mul(inv, mtx);
+		for (u64 i = 0; i < nn; ++i)
+		{
+			if (I(i, i) != oc::OneBlock)
+				throw RTE_LOC;
+			for (u64 j = 0; j < nn; ++j)
+			{
+				if (i != j && I(i, j) != oc::ZeroBlock)
+					throw RTE_LOC;
+			}
+
+		}
+	}
+
+	for (auto dup : { false, true })
+	{
+		for (u64 i = 0; i < t; ++i)
+		{
+			Paxos<u64> paxos;
+			Matrix<u64> rows(n, w);
+			PRNG prng(block(i, s));
+
+			std::vector<block> dense(n);
+
+			if (dup)
+				insertDuplicates(paxos, rows, dense, g, prng, PaxosParam::Binary);
+			else
+				insertCycle(paxos, rows, dense, g, prng, PaxosParam::Binary);
+
+
+			PointList Hpl(n, paxos.size());
+			for (u64 i = 0; i < n; ++i)
+				for (u64 j = 0; j < w; ++j)
+					Hpl.push_back({ i, rows(i,j) });
+
+			if (v)
+				std::cout << "H*\n" << SparseMtx(Hpl) << std::endl;
+
+			auto tri = paxos.getTriangulization();
+			auto A = tri.getA();
+			auto B = tri.getB();
+			auto C = tri.getC();
+			auto D = tri.getD();
+			auto E = tri.getE();
+			auto F = tri.getF();
+			if (v)
+			{
+
+				std::cout << "H\n" << tri.mH << std::endl;
+				std::cout << "A\n" << A << std::endl;
+				std::cout << "B\n" << B << std::endl;
+				std::cout << "C\n" << C << std::endl;
+				std::cout << "D\n" << D << std::endl;
+				std::cout << "E\n" << E << std::endl;
+				std::cout << "F\n" << F << std::endl;
+			}
+
+			auto CInv = C.invert();
+			if (CInv.rows() == 0)
+				throw RTE_LOC;
+
+			//  D' = -FC^-1A + D
+			//  E' = -FC^-1B + E
+
+			auto FCinv = F * CInv;
+			auto FCinvB = FCinv * B;
+			auto DD = F * CInv * A + D;
+			auto EE = FCinvB + E;
+
+			if (v)
+			{
+
+				std::cout << "DD\n" << DD << std::endl;
+				std::cout << "EE\n" << EE << std::endl;
+				std::cout << "FC\n" << FCinv << std::endl;
+				std::cout << "FCB\n" << FCinvB << std::endl;
+			}
+
+			auto EEInv = EE.invert();
+			if (EEInv.rows() == 0)
+				throw RTE_LOC;
+
+
+			//  r <- $
+			//  x2' = x2 - D'r - FC^-1 x1
+			//  p1 = -E'^-1 x2'
+			//  x1' = x1 - A r - B p1
+			//  p2 = -C^-1 x1'
+			// 
+			//  P = | r p2 p1 |
+
+			std::vector<u8> x(n), p(paxos.size());
+			prng.get<u8>(x);
+
+			span<u8> r(p.begin(), p.begin() + A.cols());
+			span<u8> p1(p.begin() + A.cols(), p.begin() + A.cols() + B.cols());
+			span<u8> p2(p.begin() + A.cols() + B.cols(), p.end());
+
+			std::vector<u8> x1(x.begin(), x.begin() + C.cols());
+			std::vector<u8> x2(x.begin() + C.cols(), x.end());
+
+			// optionally randomize r (ie p).
+			prng.get<u8>(r);
+
+			// x2' = x2 - D' r - FC^-1 x1
+			std::vector<u8> xx2(x2.begin(), x2.end());
+			DD.multAdd(r, xx2);
+			FCinv.multAdd(x1, xx2);
+
+			// p1 = E'^-1 x2'
+			EEInv.multAdd(xx2, p1);
+
+			//  x1' = x1 - A r - B p1
+			std::vector<u8> xx1(x1.begin(), x1.end());
+			A.multAdd(r, xx1);
+			B.multAdd(p1, xx1);
+
+			//  p2 = C^-1 x1'
+			CInv.multAdd(xx1, p2);
+
+			if (C.mult(p2) != xx1)
+				throw RTE_LOC;
+
+			std::vector<u8> yy = tri.mH.mult(p);
+
+			std::vector<u8> yy1(yy.begin(), yy.begin() + C.cols());
+			std::vector<u8> yy2(yy.begin() + C.cols(), yy.end());
+
+			if (yy1 != x1)
+				throw RTE_LOC;
+			if (yy2 != x2)
+				throw RTE_LOC;
+		}
+	}
+}
+
+
+void Paxos_invE_g3_Test(const oc::CLP& cmd)
+{
+	return;
+	//u64 n = 50;
+	//double e = cmd.getOr("e", 1.35);
+	////double eStep = cmd.getOr("es", 0.01);
+	////double eEnd = cmd.getOr("ee", e);
+	//u64 w = cmd.getOr("w", 3);
+	//u64 s = cmd.getOr("s", 0);
+	//u64 v = cmd.getOr("v", cmd.isSet("v") ? 1 : 0);
+	//u64 g = cmd.getOr("g", 4);
+	//u64 t = cmd.getOr("t", 1);
+
+	////for (u64 i = 0; i < t; ++i)
+	//{
+	//	Paxos<u64> paxos;
+
+	//	PaxosParam param;
+	//	param.mSparseSize = n * 1.4;
+	//	param.mDenseSize = 40;
+	//	param.mDt = PaxosParam::Binary;
+	//	param.mSsp = 40;
+	//	param.mWeight = w;
+	//	paxos.init(n, param, ZeroBlock);
+	//	PRNG prng(block(2, 0));
+
+	//	std::vector<block> dense(n);
+
+	//	oc::Matrix<u64> rows(n, w);
+	//	for (u64 i = 0; i < n; ++i)
+	//	{
+	//		std::set<u64> ss;
+	//		while (ss.size() != w)
+	//		{
+	//			ss.insert(prng.get<u64>() % paxos.mSparseSize);
+	//		}
+
+	//		std::copy(ss.begin(), ss.end(), rows[i].begin());
+	//	}
+	//	prng.get<block>(dense);
+
+	//	paxos.setInput(rows, dense);
+
+	//	//insertDuplicates(paxos, rows, dense, g, prng, PaxosParam::Binary);
+	//	//paxos.getFCInv();
+
+	//	std::vector<u64> mainRows, mainCols;
+	//	std::vector<std::array<u64, 2>> gapRows;
+	//	paxos.triangulate(mainRows, mainCols, gapRows);
+	//	auto fcinv = paxos.getFCInv(mainRows, mainCols, gapRows);
+
+	//	auto tri = paxos.getTriangulization();
+
+	//	//std::cout << tri.mH << std::endl;
+
+	//	auto A = tri.getA();
+	//	auto B = tri.getB();
+	//	auto C = tri.getC();
+	//	auto D = tri.getD();
+	//	auto E = tri.getE();
+	//	auto F = tri.getF();
+	//	if (v)
+	//	{
+
+	//		std::cout << "H\n" << tri.mH << std::endl;
+	//		std::cout << "A\n" << A << std::endl;
+	//		std::cout << "B\n" << B << std::endl;
+	//		std::cout << "C\n" << C << std::endl;
+	//		std::cout << "D\n" << D << std::endl;
+	//		std::cout << "E\n" << E << std::endl;
+	//		std::cout << "F\n" << F << std::endl;
+	//	}
+
+	//	auto CInv = C.invert();
+	//	if (CInv.rows() == 0)
+	//		throw RTE_LOC;
+
+	//	//  D' = -FC^-1A + D
+	//	//  E' = -FC^-1B + E
+
+	//	auto FCinv = F * CInv;
+	//	auto FCinvB = FCinv * B;
+	//	auto DD = F * CInv * A + D;
+	//	auto EE = FCinvB + E;
+
+	//	if (v)
+	//	{
+
+	//		std::cout << "DD\n" << DD << std::endl;
+	//		std::cout << "EE\n" << EE << std::endl;
+	//		std::cout << "FC\n" << FCinv << std::endl;
+	//		std::cout << "FCB\n" << FCinvB << std::endl;
+	//	}
+
+	//	for (u64 i = 0; i < gapRows.size(); ++i)
+	//	{
+	//		std::vector<u64> r0(FCinv.mRows[i].begin(), FCinv.mRows[i].end());
+	//		std::vector<u64> r1 = fcinv.mMtx[i];
+	//		//auto ww = A.cols() + B.cols();
+	//		//for (auto& c : r1)
+	//		//	c = tri.mPerm.mColPerm.mSrc2Dst[c];// -ww;
+
+	//		std::sort(r1.begin(), r1.end());
+
+	//		if (r0.size() != r1.size())
+	//			throw RTE_LOC;
+
+	//		for (u64 j = 0; j < r0.size(); ++j)
+	//		{
+	//			if (r0[j] != r1[j])
+	//				throw RTE_LOC;
+	//		}
+	//	}
+
+	//	auto EEInv = EE.invert();
+	//	if (EEInv.rows() == 0)
+	//		throw RTE_LOC;
+
+
+	//	//  r <- $
+	//	//  x2' = x2 - D'r - FC^-1 x1
+	//	//  p1 = -E'^-1 x2'
+	//	//  x1' = x1 - A r - B p1
+	//	//  p2 = -C^-1 x1'
+	//	// 
+	//	//  P = | r p2 p1 |
+
+	//	std::vector<u8> x(n), p(paxos.size());
+	//	prng.get<u8>(x);
+
+	//	span<u8> r(p.begin(), p.begin() + A.cols());
+	//	span<u8> p1(p.begin() + A.cols(), p.begin() + A.cols() + B.cols());
+	//	span<u8> p2(p.begin() + A.cols() + B.cols(), p.end());
+
+	//	std::vector<u8> x1(x.begin(), x.begin() + C.cols());
+	//	std::vector<u8> x2(x.begin() + C.cols(), x.end());
+
+	//	// optionally randomize r (ie p).
+	//	prng.get<u8>(r);
+
+	//	// x2' = x2 - D' r - FC^-1 x1
+	//	std::vector<u8> xx2(x2.begin(), x2.end());
+	//	DD.multAdd(r, xx2);
+	//	FCinv.multAdd(x1, xx2);
+
+	//	// p1 = E'^-1 x2'
+	//	EEInv.multAdd(xx2, p1);
+
+	//	//  x1' = x1 - A r - B p1
+	//	std::vector<u8> xx1(x1.begin(), x1.end());
+	//	A.multAdd(r, xx1);
+	//	B.multAdd(p1, xx1);
+
+	//	//  p2 = C^-1 x1'
+	//	CInv.multAdd(xx1, p2);
+
+	//	if (C.mult(p2) != xx1)
+	//		throw RTE_LOC;
+
+	//	std::vector<u8> yy = tri.mH.mult(p);
+
+	//	std::vector<u8> yy1(yy.begin(), yy.begin() + C.cols());
+	//	std::vector<u8> yy2(yy.begin() + C.cols(), yy.end());
+
+	//	if (yy1 != x1)
+	//		throw RTE_LOC;
+	//	if (yy2 != x2)
+	//		throw RTE_LOC;
+	//}
+
+}
+
+void Baxos_bin_size_Test(const oc::CLP&)
+{
+    // Independent binomial-tail references. Each minimum bounds overflow
+    // across all bins and sets by 2^-(ssp+1), including the composition bit.
+    struct Case { u64 bins, balls, ssp, sets, minimum; };
+    for (auto q : { Case{5, 2048, 40, 1, 548}, {16, 131073, 60, 1, 9006},
+        {32, 1048576, 80, 1, 34676}, {32, 1048576, 128, 1, 35177},
+        {32, 1048576, 256, 1, 36182}, {32, 1048576, 40, 1, 34132},
+        {32, 131072, 40, 8, 4601}, {64, 131072, 40, 8, 2415},
+        {1048576, 1048576, 40, 1, 19}, {1048576, 1024, 80, 1, 8} })
+    {
+        auto cap = SimpleIndex::get_bin_size(q.bins, q.balls, q.ssp, true, q.sets);
+        // Also prevent a vacuous implementation that reserves all items.
+        if (cap < q.minimum || cap > q.minimum + (q.minimum + 39) / 40 + 3)
+            throw RTE_LOC;
+        if (cap != SimpleIndex::get_bin_size(q.bins, q.balls, q.ssp, false, q.sets))
+            throw RTE_LOC;
+    }
+
+    // Directly sum small binomial tails; this does not reuse the sizing bound.
+    for (u64 bins : {2, 3, 5, 16, 64})
+        for (u64 balls : {1, 8, 24, 32, 50, 128, 200})
+            for (u64 ssp : {0, 40, 60, 80, 128, 256})
+                for (u64 sets : {1, 8})
+                {
+                    auto cap = SimpleIndex::get_bin_size(bins, balls, ssp, true, sets);
+                    if (cap > balls || cap < (balls + bins - 1) / bins)
+                        throw RTE_LOC;
+                    if (cap == balls)
+                        continue;
+                    long double p = 1.0L / bins;
+                    long double term = std::pow(1 - p, static_cast<int>(balls));
+                    long double tail = 0;
+                    for (u64 k = 0; k <= balls; ++k)
+                    {
+                        if (k > cap)
+                            tail += term;
+                        term *= (static_cast<long double>(balls - k) / (k + 1)) * p / (1 - p);
+                    }
+                    if (tail * bins * sets > std::ldexp(1.0L, -static_cast<int>(ssp + 1)))
+                        throw RTE_LOC;
+                }
+
+    auto max = std::numeric_limits<u64>::max();
+    for (u64 balls : {u64(0), u64(1), (u64(1) << 53) + 1, max})
+        for (u64 bins : {u64(1), u64(2), u64(3), max})
+        {
+            auto cap = SimpleIndex::get_bin_size(bins, balls, 80, true, max);
+            if (cap > balls || cap < balls / bins + (balls % bins != 0))
+                throw RTE_LOC;
+        }
+    for (u64 ssp : {u64(81), u64(128), u64(256), max})
+    {
+        auto cap = SimpleIndex::get_bin_size(32, 1048576, ssp);
+        if (cap < 34676 || cap > 1048576)
+            throw RTE_LOC;
+    }
+    if (SimpleIndex::get_bin_size(32, 1048576, max) != 1048576 ||
+        SimpleIndex::get_bin_size(1, 0, max) != 0)
+        throw RTE_LOC;
+
+    auto expectInvalid = [](auto&& fn)
+    {
+        try { fn(); }
+        catch (const std::invalid_argument&) { return; }
+        throw RTE_LOC;
+    };
+    expectInvalid([] { SimpleIndex::get_bin_size(0, 100, 40); });
+    expectInvalid([] { SimpleIndex::get_bin_size(2, 100, 40, true, 0); });
+    expectInvalid([] { Baxos b; b.init(100, 0, 3, 40, PaxosParam::GF128, ZeroBlock); });
+
+    // Exercise the former non-power-of-two interpolation failure in a real
+    // solve/decode, including per-thread allocation and a non-32-aligned tail.
+    PRNG prng(block(13, 17));
+    std::vector<block> items(4095), values(4095), decoded(4095);
+    prng.get(items.data(), items.size());
+    prng.get(values.data(), values.size());
+    for (u64 ssp : {40, 80, 128, 256})
+        for (u64 threads : {1, 4})
+        {
+            Baxos b;
+            b.init(items.size(), 819, 3, ssp, PaxosParam::GF128, block(7, 11));
+            std::vector<block> table(b.size(), ZeroBlock);
+            b.solve<block>(items, values, table, nullptr, threads);
+            b.decode<block>(items, decoded, table, threads);
+            if (decoded != values)
+                throw RTE_LOC;
+        }
+}
+
+void Baxos_bin_overflow_Test(const oc::CLP&)
+{
+    auto expectThrows = [](auto&& fn, const char* message)
+    {
+        try
+        {
+            fn();
+        }
+        catch (const std::runtime_error& e)
+        {
+            if (std::string(e.what()).find(message) != 0)
+                throw;
+            return;
+        }
+        throw RTE_LOC;
+    };
+
+    // Fill each selected bin exactly, then reject one more item without
+    // incrementing the count or modifying the stored entries.
+    SimpleIndex index;
+    index.init(8, 100, 40, 3);
+    std::vector<block> duplicateItems(index.mMaxBinSize, ZeroBlock);
+    index.insertItems(duplicateItems, ZeroBlock);
+    auto sizes = index.mBinSizes;
+    std::vector<u64> entries(index.mBins.size());
+    for (u64 i = 0; i < entries.size(); ++i)
+        entries[i] = index.mBins.data()[i].mVal;
+    block extra = ZeroBlock;
+    expectThrows([&]() { index.insertItems(span<block>(&extra, 1), ZeroBlock); },
+        "SimpleIndex bin overflow");
+    if (sizes != index.mBinSizes)
+        throw RTE_LOC;
+    for (u64 i = 0; i < entries.size(); ++i)
+        if (entries[i] != index.mBins.data()[i].mVal)
+            throw RTE_LOC;
+
+    // Exercise the batch loop, scalar tail, and post-barrier merge. Distinct
+    // keys avoid conflating a bin overflow with Paxos duplicate-input errors.
+    enum Stage { Batch, Tail, Merge };
+    struct OverflowCase { u64 numItems, binSize, nt; Stage stage; };
+    for (auto c : { OverflowCase{200, 50, 1, Batch}, {512, 128, 4, Batch},
+        {200, 50, 4, Tail}, {128, 64, 4, Merge} })
+    {
+        Baxos baxos;
+        baxos.init(c.numItems, c.binSize, 3, 40, PaxosParam::GF128, ZeroBlock);
+        auto perThread = c.numItems / c.nt;
+        auto capacity = Baxos::getBinSize(baxos.mNumBins, perThread, baxos.mSsp, c.nt);
+        auto main = perThread / 32 * 32;
+        if ((c.stage == Batch && capacity >= main) ||
+            (c.stage == Tail && (capacity < main || capacity >= perThread)) ||
+            (c.stage == Merge && (capacity < perThread || baxos.mItemsPerBin >= c.numItems)))
+            throw RTE_LOC;
+
+        // Fail all workers, just a background worker, or just the caller's
+        // worker. In the latter two cases the other workers reach the barrier.
+        for (u64 failingThread : {c.nt, u64(0), c.nt - 1})
+        {
+            if (c.stage == Merge && failingThread != c.nt)
+                continue;
+            oc::AES hasher(baxos.mSeed);
+            std::vector<block> keys;
+            keys.reserve(c.numItems);
+            u64 candidate = 0;
+            for (u64 i = 0; i < c.numItems; ++i)
+            {
+                auto thread = i / perThread;
+                auto target = (failingThread == c.nt || failingThread == thread)
+                    ? 0 : (i % baxos.mNumBins);
+                block key;
+                do { key = block(0, ++candidate); }
+                while (baxos.modNumBins(hasher.hashBlock(key)) != target);
+                keys.push_back(key);
+            }
+            std::vector<block> values(c.numItems, oc::OneBlock);
+            std::vector<block> out(baxos.size(), ZeroBlock);
+            expectThrows([&]() { baxos.solve<block>(keys, values, out, nullptr, c.nt); },
+                c.stage == Merge ? "Baxos merged bin overflow" : "Baxos per-thread bin overflow");
+        }
+    }
+}
+
+void Baxos_decode_weight_overflow_Test(const oc::CLP& cmd)
+{
+	auto expectThrows = [](auto&& fn)
+	{
+		bool threw = false;
+		try
+		{
+			fn();
+		}
+		catch (const std::runtime_error&)
+		{
+			threw = true;
+		}
+		if (!threw)
+			throw RTE_LOC;
+	};
+
+	// 1. Lower weight bounds apply to Paxos; the fixed upper bound is Baxos-only.
+	expectThrows([]() {
+		PaxosParam p;
+		p.init(0, 3, 40, PaxosParam::GF128);
+	});
+	for (u64 badWeight : { u64(0), u64(1) })
+	{
+		expectThrows([&]() {
+			PaxosParam p;
+			p.init(64, badWeight, 40, PaxosParam::GF128);
+		});
+		expectThrows([&]() {
+			Baxos b;
+			b.init(64, 32, badWeight, 40, PaxosParam::GF128, block(1, 2));
+		});
+		expectThrows([&]() {
+			PaxosParam p;
+			p.mSparseSize = 128;
+			p.mDenseSize = 40;
+			p.mWeight = badWeight;
+			Paxos<u16> paxos;
+			paxos.init(64, p, block(1, 2));
+		});
+		expectThrows([&]() {
+			PaxosHash<u16> hasher;
+			hasher.init(block(1, 2), badWeight, 128);
+		});
+	}
+	for (u64 badWeight : {u64(21), u64(64)})
+		expectThrows([&]() {
+			Baxos b;
+			b.init(64, 32, badWeight, 40, PaxosParam::GF128, block(1, 2));
+		});
+	expectThrows([]() {
+		PaxosHash<u16> hasher;
+		hasher.init(block(1, 2), 3, 2);
+	});
+
+	// Selecting every sparse column is valid: the final modulus is one, not zero.
+	{
+		PaxosHash<u16> hasher;
+		hasher.init(block(1, 2), 3, 3);
+		std::array<block, 32> hashes;
+		std::array<u16, 96> rows;
+		PRNG prng(block(17, 19));
+		prng.get(hashes.data(), hashes.size());
+		hasher.buildRow32(hashes.data(), rows.data());
+		for (u64 i = 0; i < hashes.size(); ++i)
+		{
+			std::array<u16, 3> scalar;
+			hasher.buildRow(hashes[i], scalar.data());
+			u64 mask = 0;
+			for (u64 j = 0; j < 3; ++j)
+			{
+				if (scalar[j] >= 3 || rows[3 * i + j] != scalar[j])
+					throw RTE_LOC;
+				mask |= u64(1) << scalar[j];
+			}
+			if (mask != 7)
+				throw RTE_LOC;
+		}
+	}
+
+	// Standalone Paxos has dynamically sized row storage, unlike Baxos.
+	for (u64 weight : {u64(21), u64(32)})
+	{
+		Paxos<u16> p;
+		PaxosParam param(129, weight, 40, PaxosParam::GF128);
+		p.init(129, param, block(3, 7));
+		std::vector<block> items(129), values(129), decoded(129), table(p.size());
+		PRNG prng(block(11, 13));
+		prng.get(items.data(), items.size());
+		prng.get(values.data(), values.size());
+		p.setInput(items);
+		p.encode<block>(values, table);
+		p.decode<block>(items, decoded, table);
+		if (decoded != values)
+			throw RTE_LOC;
+	}
+
+	expectThrows([] { PaxosParam p(128, 3, std::numeric_limits<u64>::max(), PaxosParam::GF128); });
+	expectThrows([] { PaxosParam p(std::numeric_limits<u64>::max(), 2, 40, PaxosParam::GF128); });
+	expectThrows([] { PaxosParam p(128, 3, 80, PaxosParam::Binary); });
+	for (auto type : {PaxosParam::GF128, PaxosParam::Binary})
+		expectThrows([&] {
+			PaxosParam param(128, 3, 40, type);
+			param.mDenseSize = type == PaxosParam::GF128 ? 0 : 65;
+			Paxos<u16> p;
+			p.init(128, param, ZeroBlock);
+		});
+
+	// 2. Inclusive Baxos boundary round-trips for weight == 2 and weight == 20.
+	{
+		PRNG prng(block(9, 10));
+		std::vector<block> items(128), values(128), decoded(128);
+		prng.get<block>(items);
+		prng.get<block>(values);
+
+		for (auto type : {PaxosParam::GF128, PaxosParam::Binary})
+		for (u64 validWeight : { u64(2), u64(20) })
+		{
+			for (u64 nt : { u64(1), u64(2) })
+			{
+				Baxos baxos;
+				baxos.init(items.size(), 64, validWeight, 40, type, block(5, 6));
+				std::vector<block> pp(baxos.size(), oc::ZeroBlock);
+				baxos.solve<block>(items, values, pp, nullptr, nt);
+				std::fill(decoded.begin(), decoded.end(), oc::ZeroBlock);
+				baxos.decode<block>(items, decoded, pp, nt);
+				if (decoded != values)
+					throw RTE_LOC;
+			}
+		}
+	}
+
+	// 3. Runtime decode guards when fields are mutated post-init (multi-bin, single-bin,
+	// empty input, and multi-threaded).
+	std::vector<block> items(64), values(64, oc::ZeroBlock);
+	for (u64 i = 0; i < items.size(); ++i)
+		items[i] = block(3, i);
+
+	auto makeValidBaxos = [](u64 binSize = 32)
+	{
+		Baxos b;
+		b.init(64, binSize, 3, 40, PaxosParam::GF128, block(1, 2));
+		return b;
+	};
+
+	// Mutated mWeight > 20 only (desynchronized from mPaxosParam.mWeight == 3).
+	expectThrows([&]() {
+		auto b = makeValidBaxos();
+		std::vector<block> pp(b.size(), oc::ZeroBlock);
+		b.mWeight = 21;
+		b.decode<block>(items, values, pp);
+	});
+
+	// Mutated mPaxosParam.mWeight > 20 only (desynchronized from mWeight == 3).
+	expectThrows([&]() {
+		auto b = makeValidBaxos();
+		std::vector<block> pp(b.size(), oc::ZeroBlock);
+		b.mPaxosParam.mWeight = 21;
+		b.decode<block>(items, values, pp);
+	});
+
+	// Both mWeight and mPaxosParam.mWeight > 20 across multi-threaded, single-bin, and empty inputs.
+	for (u64 nt : { u64(1), u64(4) })
+	{
+		expectThrows([&]() {
+			auto b = makeValidBaxos(32);
+			std::vector<block> pp(b.size(), oc::ZeroBlock);
+			b.mWeight = 21;
+			b.mPaxosParam.mWeight = 21;
+			b.decode<block>(items, values, pp, nt);
+		});
+		expectThrows([&]() {
+			auto b = makeValidBaxos(64);
+			std::vector<block> pp(b.size(), oc::ZeroBlock);
+			b.mWeight = 21;
+			b.decode<block>(items, values, pp, nt);
+		});
+	}
+	expectThrows([&]() {
+		auto b = makeValidBaxos(32);
+		std::vector<block> pp(b.size(), oc::ZeroBlock);
+		b.mWeight = 21;
+		span<const block> emptyItems;
+		span<block> emptyValues;
+		b.decode<block>(emptyItems, emptyValues, pp, 2);
+	});
+
+	// Invalid low weights (0 and 1) mutated post-init.
+	for (u64 lowWeight : { u64(0), u64(1) })
+	{
+		expectThrows([&]() {
+			auto b = makeValidBaxos(32);
+			std::vector<block> pp(b.size(), oc::ZeroBlock);
+			b.mWeight = lowWeight;
+			b.mPaxosParam.mWeight = lowWeight;
+			b.decode<block>(items, values, pp);
+		});
+	}
+
+	// 4. Direct Baxos::implDecodeBin stack-buffer guard checks.
+	{
+		auto b = makeValidBaxos(32);
+		Paxos<u16> paxos;
+		paxos.init(1, b.mPaxosParam, b.mSeed);
+		std::vector<block> hashes(32, block(7, 8));
+		std::vector<u64> inIdxs(32, 0);
+		std::vector<block> ppVec(b.mPaxosParam.size(), oc::ZeroBlock);
+		PxVector<block> V(values);
+		auto h = V.defaultHelper();
+		auto buff = h.newVec(32);
+		PxVector<const block> PP(ppVec);
+
+		expectThrows([&]() {
+			auto bBad = b;
+			bBad.mWeight = 21;
+			bBad.implDecodeBin<u16>(0, hashes, V, buff, inIdxs, PP, h, paxos);
+		});
+		expectThrows([&]() {
+			Paxos<u16> paxosBad;
+			paxosBad.init(1, b.mPaxosParam, b.mSeed);
+			paxosBad.mHasher.mWeight = 21;
+			b.implDecodeBin<u16>(0, hashes, V, buff, inIdxs, PP, h, paxosBad);
+		});
+		expectThrows([&]() {
+			auto bZero = b;
+			Paxos<u16> paxosZero;
+			paxosZero.init(1, b.mPaxosParam, b.mSeed);
+			bZero.mWeight = 0;
+			paxosZero.mWeight = 0;
+			paxosZero.mHasher.mWeight = 0;
+			bZero.implDecodeBin<u16>(0, hashes, V, buff, inIdxs, PP, h, paxosZero);
+		});
+
+		// Direct Paxos::decode weight and hasher consistency checks.
+		expectThrows([&]() {
+			Paxos<u16> paxosBad;
+			paxosBad.init(1, b.mPaxosParam, b.mSeed);
+			paxosBad.mWeight = 21;
+			paxosBad.mHasher.mWeight = 21;
+			std::vector<block> emptyItems(1, block(1, 2));
+			std::vector<block> outValues(1, oc::ZeroBlock);
+			paxosBad.decode<block>(emptyItems, outValues, ppVec);
+		});
+		expectThrows([&]() {
+			Paxos<u16> paxosBad;
+			paxosBad.init(1, b.mPaxosParam, b.mSeed);
+			paxosBad.mWeight = 1;
+			paxosBad.mHasher.mWeight = 1;
+			std::vector<block> emptyItems(1, block(1, 2));
+			std::vector<block> outValues(1, oc::ZeroBlock);
+			paxosBad.decode<block>(emptyItems, outValues, ppVec);
+		});
+		expectThrows([&]() {
+			Paxos<u16> paxosMismatch;
+			paxosMismatch.init(1, b.mPaxosParam, b.mSeed);
+			paxosMismatch.mHasher.mWeight = 2;
+			std::vector<block> emptyItems(1, block(1, 2));
+			std::vector<block> outValues(1, oc::ZeroBlock);
+			paxosMismatch.decode<block>(emptyItems, outValues, ppVec);
+		});
+	}
+
+	// Matching weight fields alone do not make a previously initialized hash
+	// cache consistent. The weight-three SIMD path reads three cached moduli.
+	expectThrows([] {
+		Paxos<u16> p;
+		p.init(128, PaxosParam(128, 2, 40, PaxosParam::GF128), ZeroBlock);
+		p.mWeight = p.mHasher.mWeight = 3;
+		std::vector<block> inputs(32, block(1, 2)), values(32), table(p.size());
+		p.decode<block>(inputs, values, table);
+	});
+
+	// Reject undersized public buffers before creating workers or writing.
+	for (u64 nt : {u64(0), u64(1), u64(4)})
+	{
+		auto b = makeValidBaxos();
+		std::vector<block> table(b.size(), ZeroBlock), shortValues(items.size() - 1);
+		expectThrows([&] { b.decode<block>(items, shortValues, table, nt); });
+		table.pop_back();
+		expectThrows([&] { b.decode<block>(items, values, table, nt); });
+	}
+
+	// 5. Worker-thread exceptions in Baxos::implParDecode percolate up to the main thread
+	// instead of terminating the process.
+	for (u64 threads : {u64(0), u64(1), u64(4)})
+	expectThrows([threads]() {
+		Baxos b;
+		b.init(128, 32, 3, 40, PaxosParam::GF128, block(11, 12));
+		std::vector<block> parItems(128);
+		for (u64 i = 0; i < parItems.size(); ++i)
+			parItems[i] = block(13, i);
+		std::vector<u8> u8Values(128, 0);
+		std::vector<u8> u8Pp(b.size(), 0);
+		// GF128 dense decoding with ValueType=u8 throws std::runtime_error inside
+		// PxVector<u8>::Helper::multAdd on the worker threads.
+		b.decode<u8>(parItems, u8Values, u8Pp, threads);
+	});
+}
+
+void Baxos_idxtype_sentinel_and_params_Test(const oc::CLP&)
+{
+	auto expectThrows = [](auto&& fn)
+	{
+		bool threw = false;
+		try
+		{
+			fn();
+		}
+		catch (const std::runtime_error&)
+		{
+			threw = true;
+		}
+		if (!threw)
+			throw RTE_LOC;
+	};
+
+	// 1a. mSparseSize == 255 (numItems=110, binSize=110, weight=6, ssp=40) must select
+	// IdxType = u16 because the dense columns take the total above 255.
+	{
+		const u64 numItems = 110;
+		const u64 binSize = 110;
+		Baxos baxos;
+		baxos.init(numItems, binSize, 6, 40, PaxosParam::GF128, block(3, 5));
+		if (baxos.mPaxosParam.mSparseSize != 255)
+			throw RTE_LOC;
+		PRNG prng(block(7, 9));
+		std::vector<block> items(numItems), values(numItems), decoded(numItems);
+		prng.get(items.data(), items.size());
+		prng.get(values.data(), values.size());
+		std::vector<block> table(baxos.size(), ZeroBlock);
+		baxos.solve<block>(items, values, table);
+		baxos.decode<block>(items, decoded, table);
+		if (decoded != values)
+			throw RTE_LOC;
+	}
+
+	// 1b. mPaxosParam.size() == 255 (numItems=134, binSize=134, weight=3, ssp=40,
+	// mSparseSize=250) still fits u8: the last column index is 254, not sentinel 255.
+	{
+		const u64 numItems = 134;
+		const u64 binSize = 134;
+		Baxos baxos;
+		baxos.init(numItems, binSize, 3, 40, PaxosParam::GF128, block(3, 5));
+		if (baxos.mPaxosParam.size() != 255)
+			throw RTE_LOC;
+		PRNG prng(block(7, 9));
+		std::vector<block> items(numItems), values(numItems), decoded(numItems);
+		prng.get(items.data(), items.size());
+		prng.get(values.data(), values.size());
+		std::vector<block> table(baxos.size(), ZeroBlock);
+		baxos.solve<block>(items, values, table);
+		baxos.decode<block>(items, decoded, table);
+		if (decoded != values)
+			throw RTE_LOC;
+	}
+
+	// 1c. mSparseSize <= 254 with mPaxosParam.size() > 255 (weight=2, Binary) must select
+	// IdxType = u16 in Baxos and be rejected by Paxos<u8>::init.
+	{
+		const u64 numItems = 127;
+		const u64 binSize = 127;
+		Baxos baxos;
+		baxos.init(numItems, binSize, 2, 40, PaxosParam::Binary, block(3, 5));
+		if (baxos.mPaxosParam.mSparseSize != 254 || baxos.mPaxosParam.size() <= 255)
+			throw RTE_LOC;
+		expectThrows([&]() {
+			Paxos<u8> p;
+			p.init(numItems, baxos.mPaxosParam, ZeroBlock);
+		});
+		PRNG prng(block(19, 23));
+		std::vector<block> items(numItems), values(numItems), decoded(numItems);
+		prng.get(items.data(), items.size());
+		prng.get(values.data(), values.size());
+		std::vector<block> table(baxos.size(), ZeroBlock);
+		baxos.solve<block>(items, values, table);
+		baxos.decode<block>(items, decoded, table);
+		if (decoded != values)
+			throw RTE_LOC;
+	}
+
+	// 1d. The maximum column count fits; one additional column uses the sentinel.
+	auto checkBoundary = [&]<typename IdxType>()
+	{
+		PaxosParam param;
+		param.mWeight = 3;
+		param.mSparseSize = u64(std::numeric_limits<IdxType>::max()) - 5;
+		param.mG = param.mDenseSize = 5;
+		param.mDt = PaxosParam::GF128;
+		Paxos<IdxType> p;
+		p.init(100, param, ZeroBlock);
+		PRNG prng(block(13, 17));
+		std::vector<block> items(100), values(100), decoded(100), table(p.size());
+		prng.get(items.data(), items.size());
+		prng.get(values.data(), values.size());
+		p.setInput(items);
+		p.template encode<block>(values, table);
+		p.template decode<block>(items, decoded, table);
+		if (decoded != values)
+			throw RTE_LOC;
+		auto triangulation = p.getTriangulization();
+		if (triangulation.mPerm.mColPerm.mDst2Src.size() != p.size())
+			throw RTE_LOC;
+
+		++param.mDenseSize;
+		expectThrows([&]() {
+			Paxos<IdxType> oversized;
+			oversized.init(100, param, ZeroBlock);
+		});
+	};
+	checkBoundary.template operator()<u8>();
+	checkBoundary.template operator()<u16>();
+
+	// 2. PaxosParam::init enforces ssp >= 20 while still supporting weight == 2 and
+	// high GF128 ssp. Only GF128 requires a nonempty dense part.
+	expectThrows([]() { PaxosParam p(64, 3, 0, PaxosParam::GF128); });
+	expectThrows([]() { PaxosParam p(64, 3, 0, PaxosParam::Binary); });
+	expectThrows([]() { PaxosParam p(64, 3, 19, PaxosParam::GF128); });
+	expectThrows([]() { PaxosParam p(64, 3, 19, PaxosParam::Binary); });
+	expectThrows([]() { PaxosParam p(64, 3, 64, PaxosParam::Binary); });
+	expectThrows([]() { PaxosParam p(64, 2, 64, PaxosParam::Binary); });
+	{
+		PaxosParam param;
+		param.mWeight = 3;
+		param.mSparseSize = 255;
+		param.mG = param.mDenseSize = 0;
+		param.mDt = PaxosParam::Binary;
+		Paxos<u8> p;
+		p.init(41, param, ZeroBlock);
+		PRNG prng(block(13, 17));
+		std::vector<block> items(41), values(41), decoded(41), table(p.size());
+		prng.get(items.data(), items.size());
+		prng.get(values.data(), values.size());
+		p.setInput(items);
+		for (bool randomized : {false, true})
+		{
+			p.encode<block>(values, table, randomized ? &prng : nullptr);
+			p.decode<block>(items, decoded, table);
+			if (decoded != values)
+				throw RTE_LOC;
+		}
+		auto triangulation = p.getTriangulization();
+		if (triangulation.mGap != 0 || triangulation.mPerm.mColPerm.mDst2Src.size() != 255)
+			throw RTE_LOC;
+		param.mDt = PaxosParam::GF128;
+		expectThrows([&]() { param.validate(); });
+	}
+	{
+		for (auto dt : { PaxosParam::GF128, PaxosParam::Binary })
+		{
+			PaxosParam p20(64, 3, 20, dt);
+			Paxos<u16> paxos;
+			paxos.init(64, p20, ZeroBlock);
+		}
+		PaxosParam p256(64, 3, 256, PaxosParam::GF128);
+		Paxos<u16> paxos;
+		paxos.init(64, p256, ZeroBlock);
+	}
+
+	// 3. Binary dense mDenseSize > 64 and mismatched state are caught at runtime in
+	// Paxos::encode, backfillBinary, decode32, decode8, decode1, and Baxos::solve.
+	{
+		Paxos<u16> p;
+		p.init(64, 3, 40, PaxosParam::Binary, ZeroBlock);
+		std::vector<block> items(64), values(64, ZeroBlock), table(p.size(), ZeroBlock);
+		for (u64 i = 0; i < items.size(); ++i)
+			items[i] = block(1, i);
+		p.setInput(items);
+
+		// Mismatched values size passed to encode.
+		expectThrows([&]() {
+			std::vector<block> shortVals(63, ZeroBlock);
+			p.encode<block>(shortVals, table);
+		});
+
+		// Post-init Binary mDenseSize > 64 rejected across encode and decode paths.
+		Paxos<u16> pBad;
+		pBad.init(64, 3, 40, PaxosParam::Binary, ZeroBlock);
+		pBad.setInput(items);
+		pBad.mDenseSize = 65;
+		expectThrows([&]() {
+			std::vector<block> bigTable(pBad.size(), ZeroBlock);
+			pBad.encode<block>(values, bigTable);
+		});
+
+		std::vector<u16> dummyRows(32 * 3, 0);
+		std::vector<block> dummyDense(32, ZeroBlock), outVals(32, ZeroBlock);
+		std::vector<block> bigTable(pBad.size(), ZeroBlock);
+		PxVector<block> V(outVals);
+		PxVector<const block> PP(bigTable);
+		auto h = V.defaultHelper();
+		expectThrows([&]() {
+			pBad.decode32(dummyRows.data(), dummyDense.data(), outVals.data(), PP, h);
+		});
+		expectThrows([&]() {
+			pBad.decode8(dummyRows.data(), dummyDense.data(), outVals.data(), PP, h);
+		});
+		expectThrows([&]() {
+			pBad.decode1(dummyRows.data(), dummyDense.data(), outVals.data(), PP, h);
+		});
+
+		// Uninitialized or post-init corrupted Baxos::solve/decode throws cleanly.
+		expectThrows([&]() {
+			Baxos uninit;
+			std::vector<block> oneItem(1, ZeroBlock), oneVal(1, ZeroBlock), emptyOut;
+			uninit.solve<block>(oneItem, oneVal, emptyOut);
+		});
+		expectThrows([&]() {
+			Baxos b;
+			b.init(64, 32, 3, 40, PaxosParam::GF128, ZeroBlock);
+			std::vector<block> bTable(b.size(), ZeroBlock);
+			b.mNumBins = 0;
+			b.solve<block>(items, values, bTable);
+		});
+		expectThrows([&]() {
+			Baxos b;
+			b.init(64, 32, 3, 40, PaxosParam::Binary, ZeroBlock);
+			std::vector<block> bTable(b.size(), ZeroBlock);
+			std::vector<block> bVals(items.size(), ZeroBlock);
+			b.mPaxosParam.mDenseSize = 65;
+			b.decode<block>(items, bVals, bTable);
+		});
+	}
+}
+
+void Paxos_bounds_and_gf128Inv_Test(const oc::CLP&)
+{
+	auto expectThrows = [](auto&& fn)
+	{
+		bool threw = false;
+		try
+		{
+			fn();
+		}
+		catch (const std::runtime_error&)
+		{
+			threw = true;
+		}
+		if (!threw)
+			throw RTE_LOC;
+	};
+
+	// 1. gf128Inv must pivot on any non-zero GF(2^128) element (not only
+	// OneBlock) and must still report a singular matrix as empty.
+	{
+		Matrix<block> mtx(2, 2);
+		mtx(0, 0) = ZeroBlock;
+		mtx(0, 1) = block(0, 3);
+		mtx(1, 0) = block(0, 2);
+		mtx(1, 1) = block(0, 5);
+
+		auto inv = gf128Inv(mtx);
+		if (inv.rows() != 2 || inv.cols() != 2)
+			throw RTE_LOC;
+		auto prod = gf128Mul(mtx, inv);
+		if (prod(0, 0) != oc::OneBlock || prod(0, 1) != ZeroBlock ||
+			prod(1, 0) != ZeroBlock || prod(1, 1) != oc::OneBlock)
+			throw RTE_LOC;
+
+		Matrix<block> singular(2, 2);
+		singular(0, 1) = block(0, 3);
+		singular(1, 1) = block(0, 5);
+		if (gf128Inv(singular).size() != 0)
+			throw RTE_LOC;
+	}
+
+	// 2. Paxos MatrixView<u8> encode/decode when the row width is a multiple
+	// of sizeof(block). 16 bytes per row reduces to the span overload and 32
+	// bytes per row to MatrixView<block> with two blocks per row; in both
+	// cases the output has Paxos::size() rows rather than numItems rows.
+	for (u64 cols : { u64(16), u64(32) })
+	{
+		const u64 n = 128;
+		Paxos<u16> paxos;
+		paxos.init(n, 3, 40, PaxosParam::GF128, block(1, 2));
+		PRNG prng(block(3, 4));
+		std::vector<block> items(n);
+		prng.get(items.data(), items.size());
+		Matrix<u8> values(n, cols), decoded(n, cols), p(paxos.size(), cols);
+		Matrix<u8> shortValues(n - 1, cols), shortP(paxos.size() - 1, cols);
+		prng.get(values.data(), values.size());
+
+		paxos.setInput(items);
+		expectThrows([&]() { paxos.encode<u8>(shortValues, p); });
+		expectThrows([&]() { paxos.encode<u8>(values, shortP); });
+		paxos.encode<u8>(values, p);
+
+		expectThrows([&]() { paxos.decode<u8>(items, shortValues, p); });
+		expectThrows([&]() { paxos.decode<u8>(items, decoded, shortP); });
+		paxos.decode<u8>(items, decoded, p);
+		if (decoded != values)
+			throw RTE_LOC;
+	}
+
+	// 3. The span and MatrixView<block> overloads of Paxos::encode,
+	// Paxos::decode, Baxos::solve, and Baxos::decode (and direct
+	// Baxos::implParSolve) reject inputs, values, and tables whose sizes do
+	// not match, and still round-trip otherwise.
+	{
+		const u64 n = 64;
+		PRNG prng(block(7, 8));
+		std::vector<block> items(n), values(n), decoded(n);
+		prng.get(items.data(), items.size());
+		prng.get(values.data(), values.size());
+		std::vector<block> shortItems(items.begin(), items.end() - 1);
+		std::vector<block> shortValues(n - 1), longValues(n + 1);
+
+		Paxos<u16> paxos;
+		paxos.init(n, 3, 40, PaxosParam::GF128, block(5, 6));
+		std::vector<block> p(paxos.size());
+		std::vector<block> shortP(paxos.size() - 1), longP(paxos.size() + 1);
+
+		paxos.setInput(items);
+		expectThrows([&]() { paxos.encode<block>(shortValues, p); });
+		expectThrows([&]() { paxos.encode<block>(longValues, p); });
+		expectThrows([&]() { paxos.encode<block>(values, shortP); });
+		expectThrows([&]() { paxos.encode<block>(values, longP); });
+		paxos.encode<block>(values, p);
+
+		expectThrows([&]() { paxos.decode<block>(items, shortValues, p); });
+		expectThrows([&]() { paxos.decode<block>(items, longValues, p); });
+		expectThrows([&]() { paxos.decode<block>(items, decoded, shortP); });
+		expectThrows([&]() { paxos.decode<block>(items, decoded, longP); });
+		paxos.decode<block>(items, decoded, p);
+		if (decoded != values)
+			throw RTE_LOC;
+
+		// binSize 32 gives two bins; binSize 64 takes the single-bin path.
+		for (u64 binSize : { u64(32), u64(64) })
+		{
+			Baxos baxos;
+			baxos.init(n, binSize, 3, 40, PaxosParam::GF128, block(9, 10));
+			if (baxos.mNumBins != n / binSize)
+				throw RTE_LOC;
+			std::vector<block> bp(baxos.size());
+			std::vector<block> shortBp(baxos.size() - 1), longBp(baxos.size() + 1);
+
+			expectThrows([&]() { baxos.solve<block>(shortItems, values, bp); });
+			expectThrows([&]() { baxos.solve<block>(items, shortValues, bp); });
+			expectThrows([&]() { baxos.solve<block>(items, longValues, bp); });
+			expectThrows([&]() { baxos.solve<block>(items, values, shortBp); });
+			expectThrows([&]() { baxos.solve<block>(items, values, longBp); });
+			baxos.solve<block>(items, values, bp);
+
+			PxVector<const block> pxShortVals(shortValues), pxVals(values);
+			PxVector<block> pxOut(bp);
+			auto h = pxOut.defaultHelper();
+			expectThrows([&]() { baxos.implParSolve<u16>(shortItems, pxVals, pxOut, nullptr, 1, h); });
+			expectThrows([&]() { baxos.implParSolve<u16>(items, pxShortVals, pxOut, nullptr, 1, h); });
+
+			expectThrows([&]() { baxos.decode<block>(shortItems, values, bp); });
+			expectThrows([&]() { baxos.decode<block>(items, shortValues, bp); });
+			expectThrows([&]() { baxos.decode<block>(items, longValues, bp); });
+			expectThrows([&]() { baxos.decode<block>(items, decoded, shortBp); });
+			expectThrows([&]() { baxos.decode<block>(items, decoded, longBp); });
+			std::fill(decoded.begin(), decoded.end(), ZeroBlock);
+			baxos.decode<block>(items, decoded, bp);
+			if (decoded != values)
+				throw RTE_LOC;
+
+			// Two blocks per row: sizes are counted in rows, not elements.
+			const u64 cols = 2;
+			Matrix<block> mValues(n, cols), mDecoded(n, cols);
+			Matrix<block> mTable(baxos.size(), cols);
+			Matrix<block> mShortValues(n - 1, cols);
+			Matrix<block> mShortTable(baxos.size() - 1, cols);
+			prng.get(mValues.data(), mValues.size());
+			MatrixView<const block> mValuesView(mValues.data(), n, cols);
+			MatrixView<const block> mTableView(mTable.data(), baxos.size(), cols);
+			MatrixView<const block> mShortValuesView(mShortValues.data(), n - 1, cols);
+			MatrixView<const block> mShortTableView(mShortTable.data(), baxos.size() - 1, cols);
+
+			expectThrows([&]() { baxos.solve<block>(items, mShortValuesView, MatrixView<block>(mTable)); });
+			expectThrows([&]() { baxos.solve<block>(items, mValuesView, MatrixView<block>(mShortTable)); });
+			baxos.solve<block>(items, mValuesView, MatrixView<block>(mTable));
+
+			expectThrows([&]() { baxos.decode<block>(items, MatrixView<block>(mShortValues), mTableView); });
+			expectThrows([&]() { baxos.decode<block>(items, MatrixView<block>(mDecoded), mShortTableView); });
+			baxos.decode<block>(items, MatrixView<block>(mDecoded), mTableView);
+			if (mDecoded != mValues)
+				throw RTE_LOC;
+		}
+	}
+}
+
+
+
+void Paxos_dense_kernel_Test(const oc::CLP&)
+{
+    PRNG rng(oc::toBlock(0x13579));
+    std::array<block, 8> x, out;
+    std::array<block, 40> coefficients;
+    for (u64 count : {1, 2, 3, 7, 17, 40})
+    {
+        for (unsigned trial=0; trial<200; ++trial)
+        {
+            rng.get(x.data(), x.size());
+            rng.get(coefficients.data(), coefficients.size());
+            x[0] = oc::ZeroBlock;
+            x[1] = oc::toBlock(1);
+            details::paxosDenseGF128Eight(x.data(), coefficients.data(), count, out.data());
+            for (unsigned i=0; i<8; ++i)
+            {
+                block expected=oc::ZeroBlock, power=x[i];
+                for (u64 j=0; j<count; ++j)
+                {
+                    expected ^= coefficients[j].gf128Mul(power);
+                    power = power.gf128Mul(x[i]);
+                }
+                if (out[i] != expected || details::paxosDenseGF128(x[i], coefficients.data(), count) != expected)
+                    throw std::runtime_error("dense Horner evaluation differs from power sum");
+            }
+        }
+    }
+}
+
+void Paxos_mod32_Test(const oc::CLP&)
+{
+    PRNG rng(oc::toBlock(0x24680));
+    std::array<u64,32> input, values;
+    const std::array<u64,12> divisors{1,2,3,7,64,65521,0xffffffffULL,0x100000001ULL,
+        0x8000000000000000ULL,0x8000000000000001ULL,0xffffffffffffffc5ULL,0xffffffffffffffffULL};
+    for (unsigned trial=0; trial<1000; ++trial)
+    {
+        auto divisor=trial<divisors.size()?divisors[trial]:rng.get<u64>()|1;
+        auto divider=libdivide::libdivide_u64_gen(divisor);
+        rng.get(input.data(),input.size());
+        input[0]=0;input[1]=divisor-1;input[2]=divisor;input[3]=~u64(0);
+        values=input;
+        doMod32(values.data(),&divider,divisor);
+        for (unsigned i=0;i<32;++i)
+            if(values[i]!=input[i]%divisor) throw std::runtime_error("SIMD remainder mismatch");
+    }
+}
+
+void Baxos_dense_reference_Test(const oc::CLP&)
+{
+    PRNG rng(oc::toBlock(0xabcdef));
+    for (u64 ssp : {20,40,80}) for (u64 weight : {2,3,4,5})
+    {
+        constexpr u64 n=2051;
+        Baxos b;b.init(n,300,weight,ssp,PaxosParam::GF128,rng.get<block>());
+        std::vector<block> keys(n), values(n), table(b.size()), queries(545), out(545), expected(545);
+        rng.get(keys.data(),n);rng.get(values.data(),n);rng.get(queries.data(),queries.size());
+        std::copy_n(keys.data(),33,queries.data());
+        for (bool randomized : {false,true})
+        {
+            b.solve<block>(keys,values,table,randomized?&rng:nullptr,2);
+            PaxosHash<u32> hasher;hasher.init(b.mSeed,weight,b.mPaxosParam.mSparseSize);
+            oc::AES aes(b.mSeed);
+            std::array<u32,20> row;
+            for (u64 i=0;i<queries.size();++i)
+            {
+                auto hash=aes.hashBlock(queries[i]);
+                hasher.buildRow(hash,row.data());
+                auto p=table.data()+b.modNumBins(hash)*b.mPaxosParam.size();
+                block value=oc::ZeroBlock,power=hash;
+                for(u64 j=0;j<weight;++j) value^=p[row[j]];
+                for(u64 j=0;j<b.mPaxosParam.mDenseSize;++j)
+                {
+                    value^=power.gf128Mul(p[b.mPaxosParam.mSparseSize+j]);
+                    power=power.gf128Mul(hash);
+                }
+                expected[i]=value;
+                if(i<33 && value!=values[i]) throw std::runtime_error("scalar member mismatch");
+            }
+            for(u64 threads:{1,3}) for(u64 count:{0,1,7,8,31,32,33,545})
+            {
+                b.mAddToDecode=false;
+                b.decode<block>(span<const block>(queries).subspan(0,count),span<block>(out).subspan(0,count),table,threads);
+                for(u64 i=0;i<count;++i) if(out[i]!=expected[i]) throw std::runtime_error("batched reference mismatch");
+                b.mAddToDecode=true;
+                b.decode<block>(span<const block>(queries).subspan(0,count),span<block>(out).subspan(0,count),table,threads);
+                for(u64 i=0;i<count;++i) if(out[i]!=oc::ZeroBlock) throw std::runtime_error("add-to-decode mismatch");
+            }
+        }
+    }
+}
+
+void Baxos_randomized_parallel_determinism_Test(const oc::CLP&)
+{
+    PRNG input(oc::toBlock(987654));
+    std::vector<block> keys(8193), values(keys.size()), out(keys.size());
+    input.get(keys.data(),keys.size()); input.get(values.data(),values.size());
+    for (auto dt : {PaxosParam::GF128,PaxosParam::Binary}) for(u64 threads : {2,3})
+    {
+        Baxos b;b.init(keys.size(),512,3,40,dt,oc::ZeroBlock);
+        std::vector<block> reference(b.size()), result(b.size());
+        block next;
+        for (unsigned trial=0;trial<4;++trial)
+        {
+            PRNG rng(oc::toBlock(123456));
+            b.solve<block>(keys,values,result,&rng,threads);
+            auto after=rng.get<block>();
+            if (trial==0) {reference=result;next=after;}
+            else if(result!=reference || after!=next)
+                throw std::runtime_error("parallel randomized encoding depends on worker scheduling");
+            b.decode<block>(keys,out,result,threads);
+            if(out!=values) throw std::runtime_error("parallel randomized encode mismatch");
+        }
+    }
+}
