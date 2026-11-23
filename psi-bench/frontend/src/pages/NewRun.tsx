@@ -1,16 +1,26 @@
 import { useEffect, useMemo, useState } from "react";
-import { useNavigate } from "react-router-dom";
-import { DatasetInfo, Job, ParamSpec, ProtocolsResponse, api, postJson, usePoll } from "../api";
+import { useNavigate, useSearchParams } from "react-router-dom";
+import { DatasetInfo, Job, ParamSpec, ProtocolInfo, ProtocolsResponse, api, postJson, usePoll } from "../api";
 import { fmtSizes, parseSizes } from "../format";
 
 type DataSource = "generate" | "existing" | "upload";
+type Mode = "files" | "benchmark";
+
+const DEFAULT_PROTOCOL: Record<Mode, string> = { files: "pepsi-e2e", benchmark: "bzs-perf" };
+
+function defaultSizes(p: ProtocolInfo): string {
+  if (p.id === "volepsi-perf") return "2^16, 2^16";
+  if (p.min_parties >= 3) return "2^16, 2^16, 2^16";
+  return "1024, 2^20";
+}
 
 export default function NewRun() {
   const nav = useNavigate();
+  const [query] = useSearchParams();
   const { data: cat, error: catErr } = usePoll(() => api<ProtocolsResponse>("/api/protocols"), 0);
   const { data: datasets, reload: reloadDatasets } = usePoll(() => api<DatasetInfo[]>("/api/datasets"), 0);
 
-  const [protocolId, setProtocolId] = useState("pepsi-e2e");
+  const [protocolId, setProtocolId] = useState(query.get("protocol") ?? DEFAULT_PROTOCOL.files);
   const [source, setSource] = useState<DataSource>("generate");
   const [sizesText, setSizesText] = useState("1024, 2^20");
   const [common, setCommon] = useState("100");
@@ -30,6 +40,7 @@ export default function NewRun() {
   const [msg, setMsg] = useState<{ kind: "err" | "info"; text: string } | null>(null);
 
   const proto = useMemo(() => cat?.protocols.find((p) => p.id === protocolId), [cat, protocolId]);
+  const mode: Mode = proto?.mode ?? "files";
 
   // reset protocol-specific options when the protocol changes
   useEffect(() => {
@@ -40,15 +51,7 @@ export default function NewRun() {
     if (!proto.uses_dataset && source !== "generate") setSource("generate");
     if (!proto.supports_network) setNetwork("none");
     if (!proto.supports_threads) setThreads("1");
-    if (proto.max_parties === 2 && proto.min_parties === 2) {
-      if (proto.id === "volepsi-perf") setSizesText("2^16, 2^16");
-      else if (proto.id === "pepsi" || proto.id === "pepsi-large") setSizesText("1024, 2^20");
-      else setSizesText("1024, 2^20");
-    } else if (proto.id === "bzs-perf") {
-      setSizesText("2^16, 2^16, 2^16");
-    } else {
-      setSizesText("2^16, 2^16, 2^16");
-    }
+    setSizesText(defaultSizes(proto));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [proto?.id]);
 
@@ -59,8 +62,15 @@ export default function NewRun() {
   const sizesValid = sizes.length > 0 && sizes.every((s) => Number.isFinite(s) && s > 0 && Number.isInteger(s));
   const existing = datasets?.find((d) => d.name === datasetName);
   const usesFiles = proto.uses_dataset;
-
   const setParam = (k: string, v: unknown) => setParams((p) => ({ ...p, [k]: v }));
+
+  const inMode = cat.protocols.filter((p) => p.mode === mode);
+  const mainList = inMode.filter((p) => !p.advanced);
+  const advancedList = inMode.filter((p) => p.advanced);
+
+  const canRun = usesFiles
+    ? source === "generate" ? sizesValid : source === "existing" ? Boolean(datasetName) : uploadFiles.length >= 2
+    : sizesValid;
 
   async function submit() {
     setBusy(true);
@@ -104,43 +114,55 @@ export default function NewRun() {
     }
   }
 
-  const grouped = ["PEPSI", "VOLE-PSI", "BZS-MPSI"].map((f) => [f, cat.protocols.filter((p) => p.family === f)] as const);
+  const runs = Number(reps) + Number(warmup);
 
   return (
     <>
       <h2>New run</h2>
       <p className="lead">
-        Choose a protocol, give it inputs, and run it. Runs are queued and executed one at a time on the pinned P-cores (CPUs{" "}
+        Choose what to run, give it inputs, and start it. Runs are queued and executed one at a time on the pinned P-cores (CPUs{" "}
         <code>{cat.pinned_cpus}</code>), so they do not disturb each other.
       </p>
 
       <div className="grid cols2">
         <div>
           <div className="card">
-            <h3 style={{ marginTop: 0 }}>1. Protocol</h3>
+            <h3 style={{ marginTop: 0 }}>1. What do you want to run?</h3>
+            <div className="choices">
+              <button className={`choice ${mode === "files" ? "active" : ""}`} onClick={() => setProtocolId(DEFAULT_PROTOCOL.files)}>
+                <b>On my data</b>
+                <span>Real input files: upload your own, or generate test files. You get the actual intersection and a correctness check.</span>
+              </button>
+              <button className={`choice ${mode === "benchmark" ? "active" : ""}`} onClick={() => setProtocolId(DEFAULT_PROTOCOL.benchmark)}>
+                <b>Authors' benchmark</b>
+                <span>The authors' own test program with random data. Nothing to upload. To reproduce their setup, or for BZS-MPSI with 3+ parties.</span>
+              </button>
+            </div>
             <label className="field">
               <span>Protocol</span>
               <select value={protocolId} onChange={(e) => setProtocolId(e.target.value)}>
-                {grouped.map(([f, ps]) => (
-                  <optgroup key={f} label={f}>
-                    {ps.map((p) => (
-                      <option key={p.id} value={p.id}>
-                        {p.name}
-                      </option>
-                    ))}
-                  </optgroup>
-                ))}
+                {advancedList.length > 0 ? (
+                  <>
+                    <optgroup label="Used for the comparison">
+                      {mainList.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+                    </optgroup>
+                    <optgroup label="Advanced: reproduce the paper">
+                      {advancedList.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+                    </optgroup>
+                  </>
+                ) : (
+                  mainList.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)
+                )}
               </select>
             </label>
             <p className="help" style={{ marginTop: -6 }}>{proto.summary}</p>
             <p className="help">
               Parties: {proto.min_parties}
-              {proto.max_parties === proto.min_parties ? "" : proto.max_parties ? `–${proto.max_parties}` : "+"} ·{" "}
-              {proto.mode === "files" ? "real input files" : "authors' benchmark mode (random inputs)"} · {proto.check}
+              {proto.max_parties === proto.min_parties ? "" : proto.max_parties ? `–${proto.max_parties}` : "+"} · {proto.check}
             </p>
             {proto.notes && <p className="help">{proto.notes}</p>}
             {proto.experimental && (
-              <div className="note err">Experimental: this mode crashes intermittently (and always under WAN). Failed runs are recorded, not hidden.</div>
+              <div className="note err">Experimental: this mode crashes intermittently (and always under WAN shaping). Failed runs are recorded, not hidden.</div>
             )}
           </div>
 
@@ -150,26 +172,38 @@ export default function NewRun() {
               <div className="tabs">
                 {(["generate", "existing", "upload"] as DataSource[]).map((s) => (
                   <button key={s} className={source === s ? "active" : ""} onClick={() => setSource(s)}>
-                    {s === "generate" ? "Generate" : s === "existing" ? "Existing dataset" : "Upload my files"}
+                    {s === "generate" ? "Generate test files" : s === "existing" ? "Existing dataset" : "Upload my files"}
                   </button>
                 ))}
               </div>
             )}
+            {usesFiles && proto.file_order && <p className="help" style={{ marginTop: 0 }}><b>Which file is which party:</b> {proto.file_order}</p>}
+
+            {!usesFiles && (
+              <div className="note info">
+                <b>No input files in this mode.</b> {proto.input_note}
+              </div>
+            )}
+
             {(!usesFiles || source === "generate") && (
               <>
                 <label className="field">
-                  <span>Set size per party (comma separated; 2^20 allowed)</span>
+                  <span>{usesFiles ? "Set size per party" : "Size of each party's random set"} (comma separated; 2^20 allowed)</span>
                   <input type="text" value={sizesText} onChange={(e) => setSizesText(e.target.value)} />
                   <small>
-                    {sizesValid ? `${sizes.length} parties: ${fmtSizes(sizes)}` : "Enter positive integers."}
-                    {proto.size_rule ? ` Rule: ${proto.size_rule}.` : ""} Party 0 is the client/receiver.
+                    {sizesValid ? `${sizes.length} parties: ${fmtSizes(sizes)}.` : "Enter positive integers."}
+                    {" "}The number of sizes is the number of parties.
+                    {proto.size_rule ? ` Rule: ${proto.size_rule}.` : ""}
                   </small>
                 </label>
                 <div className="grid cols3">
-                  <label className="field">
-                    <span>Intersection size</span>
-                    <input type="number" value={common} onChange={(e) => setCommon(e.target.value)} />
-                  </label>
+                  {proto.uses_common && (
+                    <label className="field">
+                      <span>{usesFiles ? "Intersection size" : "Shared elements planted"}</span>
+                      <input type="number" value={common} onChange={(e) => setCommon(e.target.value)} />
+                      <small>How many elements all parties have in common.</small>
+                    </label>
+                  )}
                   {usesFiles && (
                     <label className="field">
                       <span>Element domain</span>
@@ -186,11 +220,9 @@ export default function NewRun() {
                     </label>
                   )}
                 </div>
-                {!usesFiles && (
-                  <p className="help">This mode generates its own random inputs; only sizes and the planted intersection are used.</p>
-                )}
               </>
             )}
+
             {usesFiles && source === "existing" && (
               <label className="field">
                 <span>Dataset</span>
@@ -212,10 +244,18 @@ export default function NewRun() {
                   <input type="text" value={uploadName} onChange={(e) => setUploadName(e.target.value)} />
                 </label>
                 <label className="field">
-                  <span>One file per party (one element per line), party 0 first</span>
+                  <span>One file per party, one element per line</span>
                   <input type="file" multiple onChange={(e) => setUploadFiles(Array.from(e.target.files ?? []))} />
-                  <small>{uploadFiles.map((f) => f.name).join(", ") || "no files chosen"}</small>
+                  <small>
+                    The order below is the party order. Browsers often sort files alphabetically, so name them
+                    <code>1_client.txt</code>, <code>2_server.txt</code> and so on.
+                  </small>
                 </label>
+                {uploadFiles.length > 0 && (
+                  <ol className="help" style={{ marginTop: 0 }}>
+                    {uploadFiles.map((f, i) => <li key={f.name}>party {i}: {f.name}</li>)}
+                  </ol>
+                )}
                 <label className="check">
                   <input type="checkbox" checked={hashUpload} onChange={(e) => setHashUpload(e.target.checked)} />
                   <span>
@@ -272,8 +312,8 @@ export default function NewRun() {
 
           {msg && <div className={`note ${msg.kind === "err" ? "err" : "info"}`}>{msg.text}</div>}
           <div className="row">
-            <button disabled={busy || (!usesFiles || source === "generate" ? !sizesValid : false)} onClick={submit}>
-              {busy ? "Submitting…" : `Run ${Number(reps) + Number(warmup)} time${Number(reps) + Number(warmup) === 1 ? "" : "s"}`}
+            <button disabled={busy || !canRun} onClick={submit}>
+              {busy ? "Submitting…" : `Run ${runs} time${runs === 1 ? "" : "s"}`}
             </button>
             <span className="help">Pinned to CPUs {cat.pinned_cpus}. Results are stored in the history.</span>
           </div>

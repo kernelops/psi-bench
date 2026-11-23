@@ -14,7 +14,9 @@ NETWORKS = [
 PROTOCOLS = [
     {
         "id": "pepsi-e2e",
-        "name": "PEPSI (end-to-end driver)",
+        "name": "PEPSI: runs on your files",
+        "uses_common": True,
+        "file_order": "File 1 = client (learns the result, use the smaller set). File 2 = server.",
         "family": "PEPSI",
         "mode": "files",
         "summary": "Unbalanced two-party PSI from homomorphic encryption (USENIX Security 2024). Real input files, client and server in separate containers.",
@@ -40,7 +42,9 @@ PROTOCOLS = [
     },
     {
         "id": "volepsi",
-        "name": "VOLE-PSI (file mode, two containers)",
+        "name": "VOLE-PSI: runs on your files",
+        "uses_common": True,
+        "file_order": "File 1 = receiver (learns the result). File 2 = sender.",
         "family": "VOLE-PSI",
         "mode": "files",
         "summary": "Two-party PSI from OKVS + subfield VOLE (Rindal and Rosulek). Real input files over TCP, one container per party.",
@@ -58,7 +62,11 @@ PROTOCOLS = [
     },
     {
         "id": "volepsi-perf",
-        "name": "VOLE-PSI (authors' benchmark mode)",
+        "name": "VOLE-PSI: authors' benchmark (random data)",
+        "advanced": True,
+        "uses_common": False,
+        "input_note": "The authors' program makes up two random sets of the same size. They share nothing, so there is no "
+                      "intersection to find: it only measures speed. Both parties run inside one process.",
         "family": "VOLE-PSI",
         "mode": "benchmark",
         "summary": "The authors' -perf -psi benchmark: both parties in one process with an in-memory socket, random equal-size sets.",
@@ -75,7 +83,11 @@ PROTOCOLS = [
     },
     {
         "id": "bzs-perf",
-        "name": "BZS-MPSI (authors' benchmark mode)",
+        "name": "BZS-MPSI: authors' benchmark (random data, 3+ parties)",
+        "recommended": True,
+        "uses_common": True,
+        "input_note": "Each party makes up a random set of the size you give. The program then plants the numbers 0 to k-1 in "
+                      "every set, so the true intersection is exactly k. The leader's answer is checked against k.",
         "family": "BZS-MPSI",
         "mode": "benchmark",
         "summary": "Multi-party PSI from bicentric zero-sharing (CCS 2024) in the authors' -perf mode: one container per party over TCP, random sets with a planted intersection.",
@@ -92,7 +104,9 @@ PROTOCOLS = [
     },
     {
         "id": "bzs",
-        "name": "BZS-MPSI (file mode, experimental)",
+        "name": "BZS-MPSI: runs on your files (experimental, can crash)",
+        "uses_common": True,
+        "file_order": "Last file = leader (learns the result), second to last = pivot, all others = clients.",
         "family": "BZS-MPSI",
         "mode": "files",
         "summary": "BZS-MPSI on real input files. Unreliable: crashes intermittently, and always under WAN shaping, even in the authors' own setup.",
@@ -107,7 +121,9 @@ PROTOCOLS = [
     },
     {
         "id": "volepsi-star",
-        "name": "Baseline: star of two-party VOLE-PSI",
+        "name": "Multi-party baseline: star of VOLE-PSI (3+ files)",
+        "uses_common": True,
+        "file_order": "Last file = leader (learns the result). All other files are senders.",
         "family": "VOLE-PSI",
         "mode": "files",
         "summary": "Naive multi-party reference: the leader runs one VOLE-PSI per other party in parallel and intersects the results. The leader learns every pairwise intersection.",
@@ -118,7 +134,12 @@ PROTOCOLS = [
     },
     {
         "id": "pepsi",
-        "name": "PEPSI (upstream benchmark, synthetic)",
+        "name": "PEPSI: authors' original benchmark (made-up data)",
+        "advanced": True,
+        "uses_common": False,
+        "input_note": "No sets at all: the program computes each value from a formula (position x counter), the client's "
+                      "values are all zero and every bin matches. It only measures the encrypted computation, so the "
+                      "contents do not matter. Only the two sizes count; it also offers the extra tasks (cardinality, sum, labels).",
         "family": "PEPSI",
         "mode": "benchmark",
         "summary": "The released PEPSI benchmark (main-psi): synthetic inputs, one process plays both roles, no result decoding.",
@@ -134,7 +155,11 @@ PROTOCOLS = [
     },
     {
         "id": "pepsi-large",
-        "name": "PEPSI large elements (upstream benchmark, synthetic)",
+        "name": "PEPSI: authors' original benchmark, long elements",
+        "advanced": True,
+        "uses_common": False,
+        "input_note": "Same made-up data as the other PEPSI benchmark, but with the parameters for long elements "
+                      "(such as 128-bit values). Only the two sizes count.",
         "family": "PEPSI",
         "mode": "benchmark",
         "summary": "The released main-psi-large benchmark (N=16384, h=16, lambda from Lemma 1), synthetic inputs.",

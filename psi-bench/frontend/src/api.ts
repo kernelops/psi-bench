@@ -31,6 +31,11 @@ export interface ProtocolInfo {
   name: string;
   family: string;
   mode: "files" | "benchmark";
+  advanced?: boolean;
+  recommended?: boolean;
+  uses_common?: boolean;
+  input_note?: string;
+  file_order?: string;
   summary: string;
   min_parties: number;
   max_parties: number | null;
