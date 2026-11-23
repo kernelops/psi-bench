@@ -1,0 +1,12 @@
+bob.zimmermann@example.org
+erin.mueller@example.org
+frank.wagner@example.org
+karl.wolf@example.org
+nina.neumann@example.org
+omar.lehmann@example.org
+rosa.zimmermann@example.org
+sam.klein@example.org
+viktor.mueller@example.org
+yara.lehmann@example.org
+zoe.koch@example.org
+zoe.wolf@example.org

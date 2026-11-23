@@ -122,9 +122,30 @@ def execute_plan(plan: Plan, spec: RunSpec, run_id: int, run_dir: Path) -> dict[
 
         deadline = time.monotonic() + spec.timeout_s + 60
         docker_parties = [p for p in plan.parties if p.runtime == "docker"]
+        first_failure = None   # when the first party ended with an error
+        stopped_peers = False
         while any(pr.poll() is None for pr in procs.values()):
             if time.monotonic() > deadline:
                 raise RunError("run exceeded timeout")
+            # A party that failed (for example a protocol abort before it listens) can leave its peers waiting
+            # forever. Give them a short time to notice, then stop them instead of waiting for the full timeout.
+            if first_failure is None:
+                for p in plan.parties:
+                    mf = run_dir / f"party_{p.idx}" / "metrics.json"
+                    if mf.exists():
+                        try:
+                            code = json.loads(mf.read_text()).get("exit_code")
+                        except ValueError:
+                            continue
+                        if code not in (0, None):
+                            first_failure = time.monotonic()
+                            break
+            elif not stopped_peers and time.monotonic() - first_failure > 15:
+                kill_run_containers(run_id)
+                for pr in procs.values():
+                    if pr.poll() is None:
+                        pr.kill()
+                stopped_peers = True
             # Containers linger after their party finishes (see psi_wrap step 6); release them
             # once every docker party has written its metrics or died.
             if docker_parties and not (run_dir / "sync" / "done").exists():
@@ -218,6 +239,9 @@ def run_once(spec: RunSpec, group_id: str | None = None, rep_index: int = 0, war
         elif bad:
             status, error = "failed", f"non-zero exit codes: {bad}"
         collected = adapter.collect(spec, plan, run_dir, metrics)
+        msg = (collected.reported or {}).get("failure_message")
+        if msg and status != "ok":
+            error = f"{error}; {msg}"  # e.g. "PROTOCOL FAILURE: server bin overflow ..." instead of just exit codes
     except BaseException as e:  # noqa: BLE001  (record, then re-raise only Ctrl-C)
         status, error = ("failed", f"{type(e).__name__}: {e}")
         if isinstance(e, KeyboardInterrupt):

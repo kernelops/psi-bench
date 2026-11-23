@@ -99,6 +99,14 @@ inline uint64_t mix64(uint64_t z) {  // splitmix64 finalizer; public, keyed by s
     return z ^ (z >> 31);
 }
 
+// Chance that at least one of `bins` bins receives more than `mu` of `balls` balls (Poisson approximation, union bound).
+inline double overflow_probability(double balls, double bins, uint64_t mu) {
+    double lam = balls / bins, tail = 0;
+    for (uint64_t j = mu + 1; j < mu + 1 + 600; ++j)
+        tail += std::exp(-lam + (double)j * std::log(lam) - std::lgamma((double)j + 1));
+    return std::min(1.0, bins * tail);
+}
+
 // ---------------------------------------------------------------- constant-weight code
 struct CWCode {
     uint64_t ell = 0, hw = 0;
@@ -168,6 +176,13 @@ struct PublicParams {
         // the paper's mu = 526 for n=2^20, b=8192 and mu = 296 for n=2^20, b=16384)
         double balls = 3.0 * (double)n;
         mu = std::max<uint64_t>(1, (uint64_t)std::ceil(balls / (double)b + 2.0 * std::sqrt(balls * std::log2((double)b) / (double)b)));
+        // That bound is only reliable for large sets: for a few hundred elements it can be 1 or 2 and some bin
+        // overflows with high probability. Keep it when the chance that any bin overflows is at most 2^-10 (true for
+        // every set size of 4096 and up with the bin counts used here), otherwise raise it to the smallest value
+        // with an overflow chance of at most 2^-20. A bin overflow aborts the protocol (paper, Section 3.3).
+        if (overflow_probability(balls, (double)b, mu) > std::ldexp(1.0, -10)) {
+            while (overflow_probability(balls, (double)b, mu) > std::ldexp(1.0, -20) && mu < 100000000) ++mu;
+        }
         lambda = lambda_arg ? lambda_arg : alpha + ceil_log2((u128)b * mu);  // Lemma 1 with client bin load 1
         if (lambda < 8 || lambda > 120) throw std::invalid_argument("element bit length out of range");
         M = (((u128)1 << lambda) + b - 1) / b;
