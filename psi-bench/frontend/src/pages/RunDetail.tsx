@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { CartesianGrid, Legend, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { Run, api, usePoll } from "../api";
@@ -6,6 +6,67 @@ import { fmtKbAsMB, fmtMB, fmtSeconds, fmtSizes } from "../format";
 import { CorrectBadge } from "./History";
 
 const COLORS = ["#2563eb", "#d1495b", "#3a9e5f", "#7a5195", "#f2a65a", "#0891b2", "#9333ea", "#64748b"];
+
+interface IntersectionResp {
+  count: number;
+  shown: number;
+  party: number;
+  mapped: boolean;
+  cardinality_only: boolean;
+  dataset_gone?: boolean;
+  elements: { value: string; hash: string | null }[];
+}
+
+/** The elements the protocol found. Hidden for runs that produce no result (benchmark modes, failed runs). */
+function Intersection({ runId, status }: { runId: number; status: string }) {
+  const [data, setData] = useState<IntersectionResp | null>(null);
+  const [copied, setCopied] = useState(false);
+  useEffect(() => {
+    let alive = true;
+    setData(null);
+    if (status !== "ok") return;
+    fetch(`/api/runs/${runId}/intersection?limit=1000`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => alive && setData(d))
+      .catch(() => undefined);
+    return () => { alive = false; };
+  }, [runId, status]);
+  if (!data) return null;
+  const copy = async () => {
+    await navigator.clipboard.writeText(data.elements.map((e) => e.value).join("\n"));
+    setCopied(true);
+    window.setTimeout(() => setCopied(false), 1500);
+  };
+  return (
+    <>
+      <h3>Intersection found: {data.count.toLocaleString()} element{data.count === 1 ? "" : "s"}</h3>
+      <div className="card">
+        {data.cardinality_only ? (
+          <p style={{ margin: 0 }}>Only the number of shared elements was requested, so there is no list. The count is {data.count}.</p>
+        ) : (
+          <>
+            <p className="help" style={{ marginTop: 0 }}>
+              Learned by party {data.party}.{" "}
+              {data.mapped
+                ? "Shown as the original text from your upload; the protocol itself worked on 128-bit hashes of these."
+                : data.dataset_gone
+                  ? "The dataset is no longer on disk, so the original text is not available: these are the 128-bit values the protocol works with."
+                  : "These are the 128-bit values the protocols work with (this dataset was generated, not uploaded as text)."}
+            </p>
+            {data.count === 0 ? <p style={{ margin: 0 }}>The sets have no element in common.</p> : (
+              <pre style={{ maxHeight: 260, margin: "0 0 10px" }}>{data.elements.map((e) => e.value).join("\n")}</pre>
+            )}
+            {data.count > data.shown && <p className="help">Showing the first {data.shown.toLocaleString()} of {data.count.toLocaleString()}; the download has all of them.</p>}
+            <div className="row">
+              <a className="btn secondary small" href={`/api/runs/${runId}/intersection.txt`}>Download as .txt</a>
+              {data.count > 0 && <button className="secondary small" onClick={copy}>{copied ? "Copied" : "Copy"}</button>}
+            </div>
+          </>
+        )}
+      </div>
+    </>
+  );
+}
 
 function Stat({ k, v, s }: { k: string; v: string; s?: string }) {
   return <div className="stat"><div className="k">{k}</div><div className="v">{v}</div>{s && <div className="s">{s}</div>}</div>;
@@ -58,6 +119,8 @@ export default function RunDetail() {
         <Stat k="Peak memory" v={fmtKbAsMB(run.peak_rss_kb_max)} s={`largest party (sum ${fmtKbAsMB(run.peak_rss_kb_sum)})`} />
         <Stat k="Communication" v={fmtMB(run.comm_total_bytes)} s={run.comm_online_bytes ? `online ${fmtMB(run.comm_online_bytes)}` : "bytes delivered, incl. headers"} />
       </div>
+
+      <Intersection runId={run.id} status={run.status} />
 
       <h3>Parties</h3>
       <div className="tablewrap">

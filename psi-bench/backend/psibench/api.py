@@ -440,6 +440,53 @@ def run_log(run_id: int, party: int):
     return Path(row["log_path"]).read_text(errors="replace")[-200_000:]
 
 
+def _intersection_of(run_id: int) -> dict:
+    """The elements a run found, mapped back to the original text when the dataset was uploaded as text."""
+    with db.connect() as conn:
+        run, _ = db.get_run(conn, run_id)
+    if not run or not run["run_dir"]:
+        raise HTTPException(404, "no such run")
+    files = sorted(Path(run["run_dir"]).glob("party_*/result.csv"), key=lambda p: int(p.parent.name.split("_")[1]))
+    if not files:
+        raise HTTPException(404, "this run produced no result file (benchmark modes use random data and do not compute a result)")
+    # Normally only the party that learns the result has a file. When the leader broadcasts it, every party has one:
+    # report the last party, which is the leader in the multi-party protocols.
+    result_file = files[-1]
+    lines = [l.strip() for l in result_file.read_text().splitlines() if l.strip()]
+    params = _loads(run["params"]) or {}
+    out: dict = {"run_id": run_id, "party": int(result_file.parent.name.split("_")[1]), "file": str(result_file),
+                 "also_sent_to_others": len(files) > 1}
+    if params.get("ca"):  # cardinality only: the file holds one number
+        return {**out, "cardinality_only": True, "count": int(lines[0]) if lines else 0, "elements": [], "mapped": False}
+    mapping: dict[str, str] = {}
+    mp = Path(run["dataset"]) / "mapping.tsv" if run["dataset"] else None
+    dataset_gone = bool(run["dataset"]) and not Path(run["dataset"]).exists()
+    if mp and mp.exists():
+        for l in mp.read_text().splitlines():
+            h, _, original = l.partition("\t")
+            mapping[h] = original
+    elements = [{"value": mapping.get(datasets._norm(h), h), "hash": datasets._norm(h) if datasets._norm(h) in mapping else None}
+                for h in lines]
+    elements.sort(key=lambda e: e["value"])
+    return {**out, "cardinality_only": False, "count": len(elements), "elements": elements,
+            "mapped": bool(mapping), "dataset_gone": dataset_gone}
+
+
+@app.get("/api/runs/{run_id}/intersection")
+def run_intersection(run_id: int, limit: int = 1000):
+    d = _intersection_of(run_id)
+    d["shown"] = min(len(d["elements"]), limit)
+    d["elements"] = d["elements"][:limit]
+    return d
+
+
+@app.get("/api/runs/{run_id}/intersection.txt", response_class=PlainTextResponse)
+def run_intersection_txt(run_id: int):
+    d = _intersection_of(run_id)
+    body = str(d["count"]) + "\n" if d["cardinality_only"] else "".join(e["value"] + "\n" for e in d["elements"])
+    return PlainTextResponse(body, headers={"Content-Disposition": f'attachment; filename="intersection-run-{run_id}.txt"'})
+
+
 @app.get("/api/groups")
 def groups(limit: int = 100, protocol: str | None = None):
     with db.connect() as conn:
